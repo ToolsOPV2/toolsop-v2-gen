@@ -1,9 +1,3 @@
-<header className="header">
-  <div className="brand">
-    <img src="/logo.png" alt="ToolsOP V2 Logo" className="site-logo" />
-    <span>ToolsOP V2 Gen</span>
-  </div>
-</header>
 import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -34,6 +28,9 @@ function App() {
   const [cooldownUntil, setCooldownUntil] = useState(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
+  const [history, setHistory] = useState([]);
+  const [historyStatus, setHistoryStatus] = useState("");
+
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
       credentials: "include",
@@ -41,6 +38,29 @@ function App() {
       .then((res) => res.json())
       .then((data) => setStats(data))
       .catch(() => setStats(null));
+  };
+
+  const loadHistory = async () => {
+    try {
+      setHistoryStatus("Chargement de l'historique...");
+
+      const response = await fetch(`${API_URL}/api/history`, {
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setHistoryStatus(data.error || "Impossible de charger l'historique.");
+        return;
+      }
+
+      setHistory(data.history || []);
+      setHistoryStatus("");
+    } catch (error) {
+      console.error(error);
+      setHistoryStatus("Impossible de contacter le serveur.");
+    }
   };
 
   useEffect(() => {
@@ -84,6 +104,15 @@ function App() {
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   };
 
+  const formatDate = (dateValue) => {
+    if (!dateValue) return "Date inconnue";
+
+    return new Date(dateValue).toLocaleString("fr-FR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+  };
+
   const handleDiscordLogin = () => {
     window.location.href = `${API_URL}/auth/discord`;
   };
@@ -97,6 +126,7 @@ function App() {
     if (user?.isAdmin === true) {
       setAdminOpen(true);
       setAccessError("");
+      loadHistory();
     } else {
       setAccessError("Accès refusé : tu n’as pas le rôle admin Discord.");
     }
@@ -139,6 +169,7 @@ function App() {
 
       setBulkText("");
       loadStats();
+      loadHistory();
     } catch (error) {
       console.error(error);
       setImportStatus("Impossible de contacter le serveur.");
@@ -207,6 +238,57 @@ function App() {
     return stats?.byService?.[serviceName] ?? 0;
   };
 
+  const renderHistoryTable = () => (
+    <div className="history-card glass">
+      <div className="history-header">
+        <div>
+          <p>Historique admin</p>
+          <h3>Membres et générations</h3>
+        </div>
+
+        <button className="secondary-button" onClick={loadHistory}>
+          Rafraîchir
+        </button>
+      </div>
+
+      {historyStatus && <p className="import-status">{historyStatus}</p>}
+
+      {!historyStatus && history.length === 0 && (
+        <p className="history-empty">Aucune génération pour le moment.</p>
+      )}
+
+      {history.length > 0 && (
+        <div className="history-table-wrapper">
+          <table className="history-table">
+            <thead>
+              <tr>
+                <th>Membre</th>
+                <th>Service</th>
+                <th>Ressource générée</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {history.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.username || item.user_id || "Utilisateur"}</td>
+                  <td>{item.service}</td>
+                  <td>
+                    <code>
+                      {item.resource_value || "Ancienne génération non stockée"}
+                    </code>
+                  </td>
+                  <td>{formatDate(item.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="app">
       <div className="background-glow"></div>
@@ -219,7 +301,7 @@ function App() {
 
       <header className="navbar">
         <div className="logo">
-          <div className="logo-icon">T</div>
+          <img src="/logo.png" alt="ToolsOP V2 Logo" className="site-logo" />
 
           <div>
             <h2>ToolsOP</h2>
@@ -230,6 +312,7 @@ function App() {
         <nav>
           <a href="#home">Accueil</a>
           <a href="#services">Services</a>
+          <a href="#vip">VIP</a>
           <a href="#stats">Stats</a>
           <button onClick={handleAdminAccess}>Admin</button>
         </nav>
@@ -342,6 +425,43 @@ function App() {
         </div>
       </section>
 
+      <section className="vip-section" id="vip">
+        <div className="section-title">
+          <p>Offre premium</p>
+          <h2>VIP ToolsOP</h2>
+        </div>
+
+        <div className="vip-grid">
+          <div className="vip-card glass">
+            <div className="vip-badge">👑 VIP</div>
+
+            <h3>VIP à vie</h3>
+
+            <div className="vip-price">
+              3€ <span>à vie</span>
+            </div>
+
+            <p>
+              Le VIP permet d’avoir une meilleure expérience sur le générateur
+              ToolsOP V2.
+            </p>
+
+            <ul>
+              <li>⚡ Cooldown réduit</li>
+              <li>👑 Rôle VIP Discord</li>
+              <li>🚀 Accès premium</li>
+              <li>🛠️ Support plus rapide</li>
+            </ul>
+
+            <button className="primary-button" onClick={handleDiscordLogin}>
+              Rejoindre avec Discord
+            </button>
+          </div>
+
+          {loggedIn && user?.isAdmin === true && renderHistoryTable()}
+        </div>
+      </section>
+
       {resultOpen && generatedResource && (
         <div className="result-overlay">
           <div className="result-page glass">
@@ -446,6 +566,8 @@ function App() {
 
                 {importStatus && <p className="import-status">{importStatus}</p>}
               </div>
+
+              {renderHistoryTable()}
             </div>
           </div>
         </div>
