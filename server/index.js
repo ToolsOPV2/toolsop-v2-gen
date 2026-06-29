@@ -61,8 +61,8 @@ const allowedServices = [
   "Fortnite",
   "Xbox",
   "Hotmail",
-   "Deezer",
-   "Nitro Uncheck",
+  "Deezer",
+  "Nitro Uncheck",
 ];
 
 const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
@@ -81,6 +81,23 @@ function getCooldownForUser(user) {
   }
 
   return DEFAULT_COOLDOWN_MS;
+}
+
+function getDailyLimitForUser(user) {
+  const roles = user?.roles || [];
+
+  // Premium / VIP = illimité
+  if (roles.includes(process.env.DISCORD_VIP_ROLE_ID)) {
+    return null;
+  }
+
+  // Boost = 15 générations par jour
+  if (roles.includes(process.env.DISCORD_BOOST_ROLE_ID)) {
+    return 15;
+  }
+
+  // Sans abonnement = 6 générations par jour
+  return 6;
 }
 
 function isVipUser(user) {
@@ -205,6 +222,7 @@ app.get("/auth/discord/callback", async (req, res) => {
     const roles = member.roles || [];
     const isAdmin = roles.includes(process.env.DISCORD_ADMIN_ROLE_ID);
     const isVip = roles.includes(process.env.DISCORD_VIP_ROLE_ID);
+    const isBoost = roles.includes(process.env.DISCORD_BOOST_ROLE_ID);
 
     req.session.user = {
       id: user.id,
@@ -214,6 +232,7 @@ app.get("/auth/discord/callback", async (req, res) => {
       roles,
       isAdmin,
       isVip,
+      isBoost,
     };
 
     return res.redirect(process.env.CLIENT_URL);
@@ -440,7 +459,33 @@ app.post("/api/generate", requireLogin, async (req, res) => {
 
     const userId = req.session.user.id;
     const cooldownMs = getCooldownForUser(req.session.user);
+    const dailyLimit = getDailyLimitForUser(req.session.user);
     const now = Date.now();
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const { count: dailyCount, error: dailyCountError } = await supabase
+      .from("history")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", todayStart.toISOString());
+
+    if (dailyCountError) {
+      console.error("Erreur limite quotidienne :", dailyCountError);
+      return res.status(500).json({
+        error: "Erreur vérification limite quotidienne.",
+      });
+    }
+
+    if (dailyLimit !== null && (dailyCount || 0) >= dailyLimit) {
+      return res.status(429).json({
+        error: `Limite atteinte : tu as déjà utilisé tes ${dailyLimit} génération(s) aujourd’hui.`,
+        dailyLimit,
+        dailyUsed: dailyCount || 0,
+        dailyRemaining: 0,
+      });
+    }
 
     const { data: cooldownData, error: cooldownError } = await supabase
       .from("cooldowns")
@@ -469,6 +514,12 @@ app.post("/api/generate", requireLogin, async (req, res) => {
           cooldownRemainingMs: remaining,
           cooldownEndsAt: now + remaining,
           cooldownMs,
+          dailyLimit,
+          dailyUsed: dailyLimit === null ? null : dailyCount || 0,
+          dailyRemaining:
+            dailyLimit === null
+              ? null
+              : Math.max(0, dailyLimit - (dailyCount || 0)),
         });
       }
     }
@@ -533,11 +584,17 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       console.error(cooldownUpsertError);
     }
 
+    const newDailyUsed = (dailyCount || 0) + 1;
+
     res.json({
       success: true,
       service,
       resource: resource.value,
       cooldownMs,
+      dailyLimit,
+      dailyUsed: dailyLimit === null ? null : newDailyUsed,
+      dailyRemaining:
+        dailyLimit === null ? null : Math.max(0, dailyLimit - newDailyUsed),
     });
   } catch (error) {
     console.error(error);

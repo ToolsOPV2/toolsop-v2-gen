@@ -35,6 +35,7 @@ function App() {
 
   const [serviceSettings, setServiceSettings] = useState({});
   const [vipLockStatus, setVipLockStatus] = useState("");
+  const [lastDailyInfo, setLastDailyInfo] = useState(null);
 
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
@@ -285,6 +286,12 @@ function App() {
       setGeneratedResource(`${data.service} : ${data.resource}`);
       setResultOpen(true);
 
+      setLastDailyInfo({
+        dailyLimit: data.dailyLimit,
+        dailyUsed: data.dailyUsed,
+        dailyRemaining: data.dailyRemaining,
+      });
+
       const cooldownMs = data.cooldownMs || 5 * 60 * 1000;
       setCooldownUntil(Date.now() + cooldownMs);
 
@@ -414,6 +421,37 @@ function App() {
     </div>
   );
 
+  const planCardStyle = {
+    padding: "28px",
+    borderRadius: "26px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+  };
+
+  const planBadgeStyle = {
+    width: "fit-content",
+    padding: "8px 14px",
+    borderRadius: "999px",
+    fontWeight: "900",
+    border: "1px solid rgba(255, 255, 255, 0.14)",
+  };
+
+  const planListStyle = {
+    listStyle: "none",
+    padding: 0,
+    margin: "10px 0 18px",
+    display: "grid",
+    gap: "10px",
+  };
+
+  const planLiStyle = {
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "rgba(255, 255, 255, 0.05)",
+    color: "rgba(255, 255, 255, 0.88)",
+  };
+
   return (
     <div className="app">
       <div className="background-glow"></div>
@@ -437,7 +475,7 @@ function App() {
         <nav>
           <a href="#home">Accueil</a>
           <a href="#services">Services</a>
-          <a href="#vip">VIP</a>
+          <a href="#vip">Offres</a>
           <a href="#stats">Stats</a>
           <button onClick={handleAdminAccess}>Admin</button>
         </nav>
@@ -587,34 +625,139 @@ function App() {
 
       <section className="vip-section" id="vip">
         <div className="section-title">
-          <p>Offre premium</p>
-          <h2>VIP ToolsOP</h2>
+          <p>Offres et avantages</p>
+          <h2>Choisis ton accès ToolsOP</h2>
         </div>
 
-        <div className="vip-grid">
-          <div className="vip-card glass">
-            <div className="vip-badge">👑 VIP</div>
-
-            <h3>VIP à vie</h3>
-
-            <div className="vip-price">
-              3€ <span>à vie</span>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: "22px",
+            marginTop: "28px",
+          }}
+        >
+          <div className="glass" style={planCardStyle}>
+            <div
+              style={{
+                ...planBadgeStyle,
+                background: "rgba(255, 255, 255, 0.08)",
+                color: "white",
+              }}
+            >
+              🆓 Gratuit
             </div>
 
-            <p>
-              Le VIP permet d’avoir une meilleure expérience sur le générateur
-              ToolsOP V2.
+            <h3 style={{ fontSize: "28px", margin: "0" }}>Accès gratuit</h3>
+
+            <div style={{ fontSize: "36px", fontWeight: "900", color: "white" }}>
+              0€ <span style={{ fontSize: "15px", opacity: 0.6 }}>/ jour</span>
+            </div>
+
+            <p style={{ color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.6 }}>
+              Pour utiliser le générateur gratuitement avec une limite simple.
             </p>
 
-            <ul>
-              <li>⚡ Cooldown réduit à 1 minute</li>
-              <li>👑 Accès aux services VIP uniquement</li>
-              <li>🚀 Accès premium</li>
-              <li>🛠️ Support plus rapide</li>
+            <ul style={planListStyle}>
+              <li style={planLiStyle}>✅ 6 générations par jour</li>
+              <li style={planLiStyle}>⏱️ Cooldown de 5 minutes</li>
+              <li style={planLiStyle}>🎁 Accès aux services publics</li>
+              <li style={planLiStyle}>📦 Stocks selon disponibilité</li>
+            </ul>
+
+            <button className="secondary-button" onClick={handleDiscordLogin}>
+              Commencer gratuitement
+            </button>
+          </div>
+
+          <div
+            className="glass"
+            style={{
+              ...planCardStyle,
+              border: "1px solid rgba(255, 140, 0, 0.24)",
+              boxShadow: "0 0 28px rgba(255, 140, 0, 0.1)",
+            }}
+          >
+            <div
+              style={{
+                ...planBadgeStyle,
+                background: "rgba(255, 140, 0, 0.14)",
+                color: "#ffb347",
+                borderColor: "rgba(255, 140, 0, 0.35)",
+              }}
+            >
+              🚀 Boost
+            </div>
+
+            <h3 style={{ fontSize: "28px", margin: "0" }}>Accès Boost</h3>
+
+            <div style={{ fontSize: "36px", fontWeight: "900", color: "#ffb347" }}>
+              Boost <span style={{ fontSize: "15px", opacity: 0.7 }}>Discord</span>
+            </div>
+
+            <p style={{ color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.6 }}>
+              Pour les membres qui boostent le serveur et veulent plus de
+              générations.
+            </p>
+
+            <ul style={planListStyle}>
+              <li style={planLiStyle}>✅ 15 générations par jour</li>
+              <li style={planLiStyle}>⏱️ Cooldown de 2 minutes</li>
+              <li style={planLiStyle}>🚀 Avantage membre boost</li>
+              <li style={planLiStyle}>📦 Plus de confort d’utilisation</li>
+            </ul>
+
+            <button className="secondary-button" onClick={handleDiscordLogin}>
+              Se connecter avec Discord
+            </button>
+          </div>
+
+          <div
+            className="glass"
+            style={{
+              ...planCardStyle,
+              border: "1px solid rgba(255, 204, 0, 0.3)",
+              boxShadow: "0 0 34px rgba(255, 204, 0, 0.14)",
+            }}
+          >
+            <div
+              style={{
+                ...planBadgeStyle,
+                background: "rgba(255, 204, 0, 0.14)",
+                color: "#ffcc00",
+                borderColor: "rgba(255, 204, 0, 0.4)",
+              }}
+            >
+              👑 VIP
+            </div>
+
+            <h3 style={{ fontSize: "28px", margin: "0" }}>VIP à vie</h3>
+
+            <div
+              style={{
+                fontSize: "36px",
+                fontWeight: "900",
+                color: "#ffcc00",
+                textShadow: "0 0 20px rgba(255, 204, 0, 0.35)",
+              }}
+            >
+              3€ <span style={{ fontSize: "15px", opacity: 0.75 }}>à vie</span>
+            </div>
+
+            <p style={{ color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.6 }}>
+              L’offre premium pour profiter au maximum du générateur ToolsOP V2.
+            </p>
+
+            <ul style={planListStyle}>
+              <li style={planLiStyle}>♾️ Générations illimitées par jour</li>
+              <li style={planLiStyle}>⏱️ Cooldown réduit à 1 minute</li>
+              <li style={planLiStyle}>👑 Accès aux services VIP uniquement</li>
+              <li style={planLiStyle}>🚀 Accès premium</li>
+              <li style={planLiStyle}>🛠️ Support plus rapide</li>
             </ul>
 
             <button className="primary-button" onClick={handleDiscordLogin}>
-              Rejoindre avec Discord
+              Devenir VIP
             </button>
           </div>
         </div>
@@ -637,6 +780,14 @@ function App() {
             <h2>Voici ton code</h2>
 
             <div className="result-code">{generatedResource}</div>
+
+            {lastDailyInfo && (
+              <p className="import-status">
+                {lastDailyInfo.dailyLimit === null
+                  ? "VIP : générations illimitées aujourd’hui."
+                  : `Aujourd’hui : ${lastDailyInfo.dailyUsed}/${lastDailyInfo.dailyLimit} génération(s), ${lastDailyInfo.dailyRemaining} restante(s).`}
+              </p>
+            )}
 
             <div className="result-actions">
               <button className="primary-button" onClick={handleCopy}>
