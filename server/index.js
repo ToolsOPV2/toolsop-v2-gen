@@ -61,6 +61,8 @@ const allowedServices = [
   "Fortnite",
   "Xbox",
   "Hotmail",
+   "Deezer",
+   "Nitro Uncheck",
 ];
 
 const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
