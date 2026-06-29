@@ -334,3 +334,48 @@
     align-items: flex-start;
   }
 }
+.vip-only-button {
+  width: 100%;
+  border: none;
+  border-radius: 16px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #ffcc00, #ff8c00);
+  color: #1a1200;
+  font-weight: 900;
+  cursor: not-allowed;
+  box-shadow: 0 0 18px rgba(255, 196, 0, 0.35);
+}
+.vip-lock-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.vip-lock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.vip-lock-button,
+.vip-unlock-button {
+  border: none;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.vip-lock-button {
+  background: linear-gradient(135deg, #ffcc00, #ff8c00);
+  color: #1a1200;
+}
+
+.vip-unlock-button {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}

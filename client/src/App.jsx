@@ -31,6 +31,9 @@ function App() {
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("");
 
+  const [serviceSettings, setServiceSettings] = useState({});
+  const [vipLockStatus, setVipLockStatus] = useState("");
+
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
       credentials: "include",
@@ -38,6 +41,19 @@ function App() {
       .then((res) => res.json())
       .then((data) => setStats(data))
       .catch(() => setStats(null));
+  };
+
+  const loadServiceSettings = () => {
+    fetch(`${API_URL}/api/service-settings`, {
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setServiceSettings(data.settings || {});
+      })
+      .catch(() => {
+        setServiceSettings({});
+      });
   };
 
   const loadHistory = async () => {
@@ -78,6 +94,7 @@ function App() {
       });
 
     loadStats();
+    loadServiceSettings();
   }, []);
 
   useEffect(() => {
@@ -127,6 +144,7 @@ function App() {
       setAdminOpen(true);
       setAccessError("");
       loadHistory();
+      loadServiceSettings();
     } else {
       setAccessError("Accès refusé : tu n’as pas le rôle admin Discord.");
     }
@@ -176,9 +194,59 @@ function App() {
     }
   };
 
+  const handleToggleVipService = async (serviceName, vipOnly) => {
+    try {
+      setVipLockStatus("Modification en cours...");
+
+      const response = await fetch(`${API_URL}/api/service-settings/${serviceName}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          vipOnly,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setVipLockStatus(data.error || "Erreur pendant la modification VIP.");
+        return;
+      }
+
+      setServiceSettings((previous) => ({
+        ...previous,
+        [serviceName]: {
+          vipOnly,
+        },
+      }));
+
+      setVipLockStatus(
+        vipOnly
+          ? `${serviceName} est maintenant réservé aux VIP.`
+          : `${serviceName} est maintenant disponible pour tous.`
+      );
+
+      loadServiceSettings();
+    } catch (error) {
+      console.error(error);
+      setVipLockStatus("Impossible de contacter le serveur.");
+    }
+  };
+
   const handleGenerate = async (serviceName) => {
     if (!loggedIn) {
       handleDiscordLogin();
+      return;
+    }
+
+    const vipOnly = serviceSettings?.[serviceName]?.vipOnly === true;
+    const userIsVip = user?.isVip === true;
+
+    if (vipOnly && !userIsVip) {
+      alert("Ce service est uniquement disponible pour les membres VIP.");
       return;
     }
 
@@ -219,6 +287,7 @@ function App() {
       setCooldownUntil(Date.now() + cooldownMs);
 
       loadStats();
+      loadHistory();
     } catch (error) {
       console.error(error);
       alert("Impossible de contacter le serveur.");
@@ -286,6 +355,60 @@ function App() {
           </table>
         </div>
       )}
+    </div>
+  );
+
+  const renderVipLockPanel = () => (
+    <div className="admin-import-box">
+      <h3>Verrouillage VIP</h3>
+
+      <p>
+        Choisis quels services sont réservés uniquement aux membres VIP.
+      </p>
+
+      <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
+        {services.map((service) => {
+          const vipOnly = serviceSettings?.[service.name]?.vipOnly === true;
+
+          return (
+            <div
+              key={service.name}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                padding: "14px",
+                borderRadius: "16px",
+                background: "rgba(255, 255, 255, 0.05)",
+              }}
+            >
+              <span>
+                {service.icon} {service.name}
+              </span>
+
+              <button
+                onClick={() => handleToggleVipService(service.name, !vipOnly)}
+                style={{
+                  border: "none",
+                  borderRadius: "14px",
+                  padding: "10px 14px",
+                  fontWeight: "900",
+                  cursor: "pointer",
+                  background: vipOnly
+                    ? "rgba(255, 255, 255, 0.14)"
+                    : "linear-gradient(135deg, #ffcc00, #ff8c00)",
+                  color: vipOnly ? "white" : "#1a1200",
+                }}
+              >
+                {vipOnly ? "Remettre pour tous" : "Réserver VIP"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {vipLockStatus && <p className="import-status">{vipLockStatus}</p>}
     </div>
   );
 
@@ -401,27 +524,62 @@ function App() {
         </div>
 
         <div className="services-grid">
-          {services.map((service) => (
-            <div className="service-card glass" key={service.name}>
-              <div className="service-top">
-                <div className="service-icon">{service.icon}</div>
-                <span>{service.status}</span>
+          {services.map((service) => {
+            const vipOnly = serviceSettings?.[service.name]?.vipOnly === true;
+            const userIsVip = user?.isVip === true;
+            const lockedForUser = vipOnly && !userIsVip;
+
+            return (
+              <div className="service-card glass" key={service.name}>
+                <div className="service-top">
+                  <div className="service-icon">{service.icon}</div>
+                  <span>
+                    {vipOnly ? "VIP uniquement" : service.status}
+                  </span>
+                </div>
+
+                <h3>{service.name}</h3>
+                <p>{getStock(service.name)} ressource(s) disponible(s)</p>
+
+                {vipOnly && (
+                  <p
+                    style={{
+                      color: "#ffcc00",
+                      fontWeight: "800",
+                      marginTop: "8px",
+                    }}
+                  >
+                    👑 Service réservé aux membres VIP
+                  </p>
+                )}
+
+                <button
+                  className="generate-button"
+                  disabled={cooldownRemaining > 0 || lockedForUser}
+                  onClick={() => handleGenerate(service.name)}
+                  style={
+                    vipOnly
+                      ? {
+                          background:
+                            "linear-gradient(135deg, #ffcc00, #ff8c00)",
+                          color: "#1a1200",
+                          boxShadow: "0 0 18px rgba(255, 196, 0, 0.35)",
+                          cursor: lockedForUser ? "not-allowed" : "pointer",
+                        }
+                      : undefined
+                  }
+                >
+                  {lockedForUser
+                    ? "Uniquement membre VIP"
+                    : cooldownRemaining > 0
+                    ? `Patiente ${formatCooldown(cooldownRemaining)}`
+                    : vipOnly
+                    ? "Générer VIP"
+                    : "Générer"}
+                </button>
               </div>
-
-              <h3>{service.name}</h3>
-              <p>{getStock(service.name)} ressource(s) disponible(s)</p>
-
-              <button
-                className="generate-button"
-                disabled={cooldownRemaining > 0}
-                onClick={() => handleGenerate(service.name)}
-              >
-                {cooldownRemaining > 0
-                  ? `Patiente ${formatCooldown(cooldownRemaining)}`
-                  : "Générer"}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -447,8 +605,8 @@ function App() {
             </p>
 
             <ul>
-              <li>⚡ Cooldown réduit</li>
-              <li>👑 Rôle VIP Discord</li>
+              <li>⚡ Cooldown réduit à 1 minute</li>
+              <li>👑 Accès aux services VIP uniquement</li>
               <li>🚀 Accès premium</li>
               <li>🛠️ Support plus rapide</li>
             </ul>
@@ -457,8 +615,6 @@ function App() {
               Rejoindre avec Discord
             </button>
           </div>
-
-          {loggedIn && user?.isAdmin === true && renderHistoryTable()}
         </div>
       </section>
 
@@ -534,6 +690,8 @@ function App() {
                   <span>Services actifs</span>
                 </div>
               </div>
+
+              {renderVipLockPanel()}
 
               <div className="admin-import-box">
                 <h3>Importer des ressources</h3>

@@ -30,10 +30,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.endsWith(".vercel.app")
-      ) {
+      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
         return callback(null, true);
       }
 
@@ -71,7 +68,7 @@ const VIP_COOLDOWN_MS = 1 * 60 * 1000;
 const BOOST_COOLDOWN_MS = 2 * 60 * 1000;
 
 function getCooldownForUser(user) {
-  const roles = user.roles || [];
+  const roles = user?.roles || [];
 
   if (roles.includes(process.env.DISCORD_VIP_ROLE_ID)) {
     return VIP_COOLDOWN_MS;
@@ -82,6 +79,11 @@ function getCooldownForUser(user) {
   }
 
   return DEFAULT_COOLDOWN_MS;
+}
+
+function isVipUser(user) {
+  const roles = user?.roles || [];
+  return roles.includes(process.env.DISCORD_VIP_ROLE_ID);
 }
 
 function requireLogin(req, res, next) {
@@ -200,6 +202,7 @@ app.get("/auth/discord/callback", async (req, res) => {
 
     const roles = member.roles || [];
     const isAdmin = roles.includes(process.env.DISCORD_ADMIN_ROLE_ID);
+    const isVip = roles.includes(process.env.DISCORD_VIP_ROLE_ID);
 
     req.session.user = {
       id: user.id,
@@ -208,6 +211,7 @@ app.get("/auth/discord/callback", async (req, res) => {
       avatar: user.avatar,
       roles,
       isAdmin,
+      isVip,
     };
 
     return res.redirect(process.env.CLIENT_URL);
@@ -282,6 +286,82 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
+app.get("/api/service-settings", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("service_settings")
+      .select("service, vip_only");
+
+    if (error) {
+      console.error("Erreur lecture service settings :", error);
+      return res.status(500).json({
+        error: "Erreur lecture paramètres services.",
+      });
+    }
+
+    const settings = {};
+
+    for (const service of allowedServices) {
+      settings[service] = {
+        vipOnly: false,
+      };
+    }
+
+    for (const item of data || []) {
+      settings[item.service] = {
+        vipOnly: item.vip_only === true,
+      };
+    }
+
+    res.json({
+      success: true,
+      settings,
+    });
+  } catch (error) {
+    console.error("Erreur serveur service settings :", error);
+    res.status(500).json({
+      error: "Erreur serveur paramètres services.",
+    });
+  }
+});
+
+app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
+  try {
+    const { service } = req.params;
+    const { vipOnly } = req.body;
+
+    if (!allowedServices.includes(service)) {
+      return res.status(400).json({
+        error: "Service invalide.",
+      });
+    }
+
+    const { error } = await supabase.from("service_settings").upsert({
+      service,
+      vip_only: vipOnly === true,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error("Erreur mise à jour service settings :", error);
+      return res.status(500).json({
+        error: "Erreur mise à jour service.",
+      });
+    }
+
+    res.json({
+      success: true,
+      service,
+      vipOnly: vipOnly === true,
+    });
+  } catch (error) {
+    console.error("Erreur serveur service settings :", error);
+    res.status(500).json({
+      error: "Erreur serveur service settings.",
+    });
+  }
+});
+
 app.post("/api/resources/import", requireAdmin, async (req, res) => {
   try {
     const { service, items } = req.body;
@@ -333,6 +413,26 @@ app.post("/api/generate", requireLogin, async (req, res) => {
     if (!allowedServices.includes(service)) {
       return res.status(400).json({
         error: "Service invalide.",
+      });
+    }
+
+    const { data: serviceSetting, error: serviceSettingError } = await supabase
+      .from("service_settings")
+      .select("vip_only")
+      .eq("service", service)
+      .maybeSingle();
+
+    if (serviceSettingError) {
+      console.error("Erreur lecture VIP service :", serviceSettingError);
+      return res.status(500).json({
+        error: "Erreur vérification VIP.",
+      });
+    }
+
+    if (serviceSetting?.vip_only && !isVipUser(req.session.user)) {
+      return res.status(403).json({
+        error: "Ce service est réservé aux membres VIP.",
+        vipOnly: true,
       });
     }
 
