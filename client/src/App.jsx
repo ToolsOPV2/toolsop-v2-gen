@@ -43,6 +43,7 @@ function App() {
   const [usageInfo, setUsageInfo] = useState(null);
   const [resetCountdown, setResetCountdown] = useState("");
 
+
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
       credentials: "include",
@@ -974,8 +975,9 @@ function App() {
     lineHeight: "1.5",
   }}
 >
-  ⚠️ Information importante : tout les comptes ne sont pas forcément
-  fonctionnelles, mais la majorité le sont.
+  ⚠️ Information importante : tous les comptes ne sont pas forcément
+  fonctionnels, mais la majorité le sont.
+</div>
 
           <div className="hero-tags">
             <div>⚡ Rapide</div>
