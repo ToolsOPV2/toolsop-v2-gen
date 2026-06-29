@@ -6,6 +6,7 @@ const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
 const app = express();
+
 app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 5000;
@@ -17,9 +18,28 @@ const supabase = createClient(
 
 app.use(express.json());
 
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "https://toolsopv2gen.vercel.app",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      console.log("CORS bloqué pour :", origin);
+      return callback(new Error(`CORS bloqué pour : ${origin}`));
+    },
     credentials: true,
   })
 );
@@ -92,6 +112,14 @@ function requireAdmin(req, res, next) {
 
 app.get("/", (req, res) => {
   res.send("Backend ToolsOP V2 Gen en ligne avec Supabase.");
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Backend en ligne.",
+    clientUrl: process.env.CLIENT_URL || null,
+  });
 });
 
 app.get("/auth/discord", (req, res) => {
@@ -389,7 +417,7 @@ app.post("/api/generate", requireLogin, async (req, res) => {
     });
 
     if (historyError) {
-      console.error(historyError);
+      console.error("Erreur historique génération :", historyError);
     }
 
     const { error: cooldownUpsertError } = await supabase
@@ -414,7 +442,6 @@ app.post("/api/generate", requireLogin, async (req, res) => {
     res.status(500).json({ error: "Erreur serveur génération." });
   }
 });
-
 
 app.get("/api/history", requireAdmin, async (req, res) => {
   try {
