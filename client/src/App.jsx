@@ -961,6 +961,23 @@ function App() {
           <p className="subtitle">
             Plateforme moderne, rapide et sécurisée pour gérer tes ressources.
           </p>
+          <div
+  className="glass"
+  style={{
+    marginTop: "18px",
+    padding: "14px 16px",
+    borderRadius: "18px",
+    border: "1px solid rgba(255, 204, 0, 0.25)",
+    background: "rgba(255, 204, 0, 0.08)",
+    color: "rgba(255, 255, 255, 0.9)",
+    fontWeight: "700",
+    lineHeight: "1.5",
+  }}
+>
+  ⚠️ Information importante : tout les comptes ne sont pas forcément
+  fonctionnelles, mais la majorité le sont. En cas de problème, contacte le
+  support.
+</div>
 
           <div className="hero-tags">
             <div>⚡ Rapide</div>
@@ -1400,6 +1417,16 @@ function App() {
             <div className="result-icon">🎁</div>
 
             <p className="result-label">Ressource générée avec succès</p>
+            <p
+  style={{
+    marginTop: "10px",
+    color: "rgba(255, 255, 255, 0.72)",
+    fontSize: "14px",
+    lineHeight: "1.5",
+  }}
+>
+  ⚠️ Certains comptes peuvent ne pas fonctionner.
+</p>
 
             <h2>Voici ton code</h2>
 
