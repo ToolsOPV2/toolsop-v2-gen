@@ -6,32 +6,6 @@ const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
 const app = express();
-app.get("/api/history", requireAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("history")
-      .select("id, service, user_id, username, resource_value, created_at")
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (error) {
-      console.error(error);
-      return res.status(500).json({
-        error: "Erreur lecture historique.",
-      });
-    }
-
-    res.json({
-      success: true,
-      history: data,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      error: "Erreur serveur historique.",
-    });
-  }
-});
 app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 5000;
@@ -407,12 +381,12 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       });
     }
 
-const { error: historyError } = await supabase.from("history").insert({
-  service,
-  user_id: userId,
-  username: req.session.user.username,
-  resource_value: resource.value,
-});
+    const { error: historyError } = await supabase.from("history").insert({
+      service,
+      user_id: userId,
+      username: req.session.user.username,
+      resource_value: resource.value,
+    });
 
     if (historyError) {
       console.error(historyError);
@@ -438,6 +412,36 @@ const { error: historyError } = await supabase.from("history").insert({
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erreur serveur génération." });
+  }
+});
+
+
+app.get("/api/history", requireAdmin, async (req, res) => {
+  try {
+    console.log("Route /api/history appelée par :", req.session.user?.username);
+
+    const { data, error } = await supabase
+      .from("history")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.error("Erreur Supabase historique :", error);
+      return res.status(500).json({
+        error: error.message || "Erreur lecture historique.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      history: data || [],
+    });
+  } catch (error) {
+    console.error("Erreur serveur historique :", error);
+    return res.status(500).json({
+      error: error.message || "Erreur serveur historique.",
+    });
   }
 });
 
