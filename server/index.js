@@ -548,7 +548,6 @@ app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
 
     const nextVipOnly =
       typeof vipOnly === "boolean" ? vipOnly : existing?.vip_only === true;
-
     const nextMaintenance =
       typeof maintenance === "boolean"
         ? maintenance
@@ -564,8 +563,7 @@ app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
     if (error) {
       console.error("Erreur mise à jour service settings :", error);
       return res.status(500).json({
-        error:
-          "Erreur mise à jour service. Vérifie que la colonne maintenance existe dans Supabase.",
+        error: "Erreur mise à jour service. Vérifie que la colonne maintenance existe dans Supabase.",
       });
     }
 
