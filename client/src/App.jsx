@@ -1,4 +1,9 @@
-<img src="/logo.png" alt="ToolsOP V2 Logo" className="site-logo" />
+<header className="header">
+  <div className="brand">
+    <img src="/logo.png" alt="ToolsOP V2 Logo" className="site-logo" />
+    <span>ToolsOP V2 Gen</span>
+  </div>
+</header>
 import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
