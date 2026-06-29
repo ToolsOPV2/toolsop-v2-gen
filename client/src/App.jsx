@@ -9,6 +9,8 @@ const services = [
   { icon: "🎯", name: "Fortnite", status: "Disponible" },
   { icon: "🟢", name: "Xbox", status: "Disponible" },
   { icon: "✉️", name: "Hotmail", status: "Disponible" },
+  { icon: "🎵", name: "Deezer", status: "Disponible" },
+  { icon: "💳", name: "Nitro Uncheck", status: "Disponible" },
 ];
 
 function App() {
