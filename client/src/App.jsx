@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -19,6 +19,7 @@ function App() {
   const [accessError, setAccessError] = useState("");
 
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminTab, setAdminTab] = useState("import");
   const [selectedService, setSelectedService] = useState("Steam");
   const [bulkText, setBulkText] = useState("");
   const [importStatus, setImportStatus] = useState("");
@@ -32,11 +33,14 @@ function App() {
 
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyServiceFilter, setHistoryServiceFilter] = useState("Tous");
 
   const [serviceSettings, setServiceSettings] = useState({});
   const [vipLockStatus, setVipLockStatus] = useState("");
   const [lastDailyInfo, setLastDailyInfo] = useState(null);
   const [usageInfo, setUsageInfo] = useState(null);
+  const [resetCountdown, setResetCountdown] = useState("");
 
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
@@ -118,6 +122,7 @@ function App() {
       .catch(() => {
         setLoggedIn(false);
         setUser(null);
+        setUsageInfo(null);
       });
 
     loadStats();
@@ -140,6 +145,31 @@ function App() {
     return () => clearInterval(interval);
   }, [cooldownUntil]);
 
+  useEffect(() => {
+    if (!usageInfo?.resetAt) {
+      setResetCountdown("");
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = new Date(usageInfo.resetAt).getTime() - Date.now();
+
+      if (remaining <= 0) {
+        setResetCountdown("bientôt");
+        return;
+      }
+
+      const hours = Math.floor(remaining / 3600000);
+      const minutes = Math.floor((remaining % 3600000) / 60000);
+      setResetCountdown(`${hours}h ${String(minutes).padStart(2, "0")}min`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 30000);
+
+    return () => clearInterval(interval);
+  }, [usageInfo?.resetAt]);
+
   const formatCooldown = (ms) => {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -161,6 +191,22 @@ function App() {
     window.location.href = `${API_URL}/auth/discord`;
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_URL}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error(error);
+    }
+
+    setLoggedIn(false);
+    setUser(null);
+    setUsageInfo(null);
+    setLastDailyInfo(null);
+  };
+
   const handleAdminAccess = () => {
     if (!loggedIn) {
       handleDiscordLogin();
@@ -172,6 +218,7 @@ function App() {
       setAccessError("");
       loadHistory();
       loadServiceSettings();
+      loadStats();
     } else {
       setAccessError("Accès refusé : tu n’as pas le rôle admin Discord.");
     }
@@ -222,7 +269,7 @@ function App() {
     }
   };
 
-  const handleToggleVipService = async (serviceName, vipOnly) => {
+  const handleUpdateServiceSettings = async (serviceName, updates) => {
     try {
       setVipLockStatus("Modification en cours...");
 
@@ -232,31 +279,26 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          vipOnly,
-        }),
+        body: JSON.stringify(updates),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setVipLockStatus(data.error || "Erreur pendant la modification VIP.");
+        setVipLockStatus(data.error || "Erreur pendant la modification.");
         return;
       }
 
       setServiceSettings((previous) => ({
         ...previous,
         [serviceName]: {
-          vipOnly,
+          ...(previous[serviceName] || {}),
+          vipOnly: data.vipOnly === true,
+          maintenance: data.maintenance === true,
         },
       }));
 
-      setVipLockStatus(
-        vipOnly
-          ? `${serviceName} est maintenant réservé aux VIP.`
-          : `${serviceName} est maintenant disponible pour tous.`
-      );
-
+      setVipLockStatus(`${serviceName} mis à jour avec succès.`);
       loadServiceSettings();
     } catch (error) {
       console.error(error);
@@ -271,7 +313,19 @@ function App() {
     }
 
     const vipOnly = serviceSettings?.[serviceName]?.vipOnly === true;
+    const maintenance = serviceSettings?.[serviceName]?.maintenance === true;
     const userIsVip = user?.isVip === true;
+    const stock = getStock(serviceName);
+
+    if (maintenance) {
+      alert("Ce service est actuellement en maintenance.");
+      return;
+    }
+
+    if (stock <= 0) {
+      alert("Ce service est en rupture de stock.");
+      return;
+    }
 
     if (vipOnly && !userIsVip) {
       alert("Ce service est uniquement disponible pour les membres VIP.");
@@ -305,20 +359,13 @@ function App() {
         }
 
         if (data.dailyLimit !== undefined) {
-          setUsageInfo({
-            success: true,
-            plan:
-              data.dailyLimit === null
-                ? "VIP"
-                : data.dailyLimit === 15
-                ? "Boost"
-                : "Gratuit",
+          setLastDailyInfo({
             dailyLimit: data.dailyLimit,
-            dailyUsed: data.dailyUsed || 0,
-            dailyRemaining: data.dailyRemaining || 0,
-            cooldownMs: data.cooldownMs || null,
-            unlimited: data.dailyLimit === null,
+            dailyUsed: data.dailyUsed,
+            dailyRemaining: data.dailyRemaining,
+            resetAt: data.resetAt,
           });
+          loadUsageInfo();
         }
 
         alert(data.error || "Erreur pendant la génération.");
@@ -332,23 +379,8 @@ function App() {
         dailyLimit: data.dailyLimit,
         dailyUsed: data.dailyUsed,
         dailyRemaining: data.dailyRemaining,
+        resetAt: data.resetAt,
       });
-
-      setUsageInfo((previous) => ({
-        ...(previous || {}),
-        success: true,
-        plan:
-          data.dailyLimit === null
-            ? "VIP"
-            : data.dailyLimit === 15
-            ? "Boost"
-            : "Gratuit",
-        dailyLimit: data.dailyLimit,
-        dailyUsed: data.dailyUsed,
-        dailyRemaining: data.dailyRemaining,
-        cooldownMs: data.cooldownMs,
-        unlimited: data.dailyLimit === null,
-      }));
 
       const cooldownMs = data.cooldownMs || 5 * 60 * 1000;
       setCooldownUntil(Date.now() + cooldownMs);
@@ -375,6 +407,145 @@ function App() {
     return stats?.byService?.[serviceName] ?? 0;
   };
 
+  const getServiceBadge = (serviceName) => {
+    const stock = getStock(serviceName);
+    const settings = serviceSettings?.[serviceName] || {};
+
+    if (settings.maintenance) {
+      return { label: "Maintenance", color: "#ff6b6b" };
+    }
+
+    if (stock <= 0) {
+      return { label: "Rupture", color: "#ff6b6b" };
+    }
+
+    if (settings.vipOnly) {
+      return { label: "VIP uniquement", color: "#ffcc00" };
+    }
+
+    if (stock <= 5) {
+      return { label: "Stock faible", color: "#ff8c00" };
+    }
+
+    return { label: "Public", color: "#66ff99" };
+  };
+
+  const filteredHistory = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+
+    return history.filter((item) => {
+      const matchService =
+        historyServiceFilter === "Tous" || item.service === historyServiceFilter;
+
+      const matchSearch =
+        !query ||
+        String(item.username || "").toLowerCase().includes(query) ||
+        String(item.user_id || "").toLowerCase().includes(query) ||
+        String(item.service || "").toLowerCase().includes(query) ||
+        String(item.resource_value || "").toLowerCase().includes(query);
+
+      return matchService && matchSearch;
+    });
+  }, [history, historySearch, historyServiceFilter]);
+
+  const exportHistoryCsv = () => {
+    const rows = [
+      ["Membre", "Service", "Ressource", "Date"],
+      ...filteredHistory.map((item) => [
+        item.username || item.user_id || "Utilisateur",
+        item.service || "",
+        item.resource_value || "Ancienne génération non stockée",
+        formatDate(item.created_at),
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "historique-toolsop.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const renderAccountCard = () => {
+    if (!loggedIn) {
+      return null;
+    }
+
+    return (
+      <div
+        className="glass"
+        style={{
+          marginTop: "18px",
+          padding: "18px",
+          borderRadius: "20px",
+          display: "grid",
+          gap: "12px",
+          background: "rgba(255, 255, 255, 0.06)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "14px",
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <strong style={{ fontSize: "18px" }}>
+              Mon compte : {user?.username}
+            </strong>
+            <p style={{ margin: "6px 0 0", opacity: 0.8 }}>
+              Accès : {usageInfo?.plan || "Chargement..."}
+            </p>
+          </div>
+
+          <button className="secondary-button" onClick={handleLogout}>
+            Déconnexion
+          </button>
+        </div>
+
+        {usageInfo ? (
+          <>
+            {usageInfo.unlimited ? (
+              <p style={{ margin: 0, color: "#ffcc00", fontWeight: "900" }}>
+                ♾️ Générations illimitées aujourd’hui
+              </p>
+            ) : (
+              <p style={{ margin: 0 }}>
+                Générations :{" "}
+                <strong>
+                  {usageInfo.dailyUsed}/{usageInfo.dailyLimit}
+                </strong>{" "}
+                — Restantes : <strong>{usageInfo.dailyRemaining}</strong>
+              </p>
+            )}
+
+            <p style={{ margin: 0, opacity: 0.82 }}>
+              Cooldown : {Math.round((usageInfo.cooldownMs || 0) / 60000)} minute(s)
+              {resetCountdown ? ` • Reset dans ${resetCountdown}` : ""}
+            </p>
+          </>
+        ) : (
+          <p style={{ margin: 0, opacity: 0.8 }}>
+            Chargement de tes générations restantes...
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const renderHistoryTable = () => (
     <div className="history-card glass">
       <div className="history-header">
@@ -383,18 +554,61 @@ function App() {
           <h3>Membres et générations</h3>
         </div>
 
-        <button className="secondary-button" onClick={loadHistory}>
-          Rafraîchir
-        </button>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button className="secondary-button" onClick={loadHistory}>
+            Rafraîchir
+          </button>
+          <button className="secondary-button" onClick={exportHistoryCsv}>
+            Export CSV
+          </button>
+        </div>
       </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+          gap: "12px",
+          margin: "14px 0",
+        }}
+      >
+        <input
+          placeholder="Rechercher membre, service, ressource..."
+          value={historySearch}
+          onChange={(e) => setHistorySearch(e.target.value)}
+          style={{
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: "14px",
+            padding: "12px",
+            background: "rgba(255, 255, 255, 0.06)",
+            color: "white",
+          }}
+        />
+
+        <select
+          value={historyServiceFilter}
+          onChange={(e) => setHistoryServiceFilter(e.target.value)}
+        >
+          <option value="Tous">Tous les services</option>
+          {services.map((service) => (
+            <option key={service.name} value={service.name}>
+              {service.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <p className="import-status">
+        {filteredHistory.length} résultat(s) affiché(s) sur {history.length}.
+      </p>
 
       {historyStatus && <p className="import-status">{historyStatus}</p>}
 
-      {!historyStatus && history.length === 0 && (
-        <p className="history-empty">Aucune génération pour le moment.</p>
+      {!historyStatus && filteredHistory.length === 0 && (
+        <p className="history-empty">Aucune génération trouvée.</p>
       )}
 
-      {history.length > 0 && (
+      {filteredHistory.length > 0 && (
         <div className="history-table-wrapper">
           <table className="history-table">
             <thead>
@@ -407,7 +621,7 @@ function App() {
             </thead>
 
             <tbody>
-              {history.map((item) => (
+              {filteredHistory.map((item) => (
                 <tr key={item.id}>
                   <td>{item.username || item.user_id || "Utilisateur"}</td>
                   <td>{item.service}</td>
@@ -426,25 +640,26 @@ function App() {
     </div>
   );
 
-  const renderVipLockPanel = () => (
+  const renderSettingsPanel = () => (
     <div className="admin-import-box">
-      <h3>Verrouillage VIP</h3>
+      <h3>Verrouillage VIP et maintenance</h3>
 
       <p>
-        Choisis quels services sont réservés uniquement aux membres VIP.
+        Réserve un service aux VIP ou désactive temporairement la génération.
       </p>
 
       <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
         {services.map((service) => {
           const vipOnly = serviceSettings?.[service.name]?.vipOnly === true;
+          const maintenance = serviceSettings?.[service.name]?.maintenance === true;
 
           return (
             <div
               key={service.name}
               style={{
-                display: "flex",
+                display: "grid",
+                gridTemplateColumns: "1fr auto auto",
                 alignItems: "center",
-                justifyContent: "space-between",
                 gap: "12px",
                 padding: "14px",
                 borderRadius: "16px",
@@ -456,7 +671,9 @@ function App() {
               </span>
 
               <button
-                onClick={() => handleToggleVipService(service.name, !vipOnly)}
+                onClick={() =>
+                  handleUpdateServiceSettings(service.name, { vipOnly: !vipOnly })
+                }
                 style={{
                   border: "none",
                   borderRadius: "14px",
@@ -469,7 +686,28 @@ function App() {
                   color: vipOnly ? "white" : "#1a1200",
                 }}
               >
-                {vipOnly ? "Remettre pour tous" : "Réserver VIP"}
+                {vipOnly ? "Remettre public" : "Réserver VIP"}
+              </button>
+
+              <button
+                onClick={() =>
+                  handleUpdateServiceSettings(service.name, {
+                    maintenance: !maintenance,
+                  })
+                }
+                style={{
+                  border: "none",
+                  borderRadius: "14px",
+                  padding: "10px 14px",
+                  fontWeight: "900",
+                  cursor: "pointer",
+                  background: maintenance
+                    ? "rgba(255, 255, 255, 0.14)"
+                    : "linear-gradient(135deg, #ff4d4d, #aa0000)",
+                  color: "white",
+                }}
+              >
+                {maintenance ? "Réactiver" : "Maintenance"}
               </button>
             </div>
           );
@@ -477,6 +715,84 @@ function App() {
       </div>
 
       {vipLockStatus && <p className="import-status">{vipLockStatus}</p>}
+    </div>
+  );
+
+  const renderStockPanel = () => (
+    <div className="admin-import-box">
+      <h3>Stocks</h3>
+      <p>Surveille les services en rupture ou presque vides.</p>
+
+      <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
+        {services.map((service) => {
+          const stock = getStock(service.name);
+          const badge = getServiceBadge(service.name);
+
+          return (
+            <div
+              key={service.name}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "12px",
+                alignItems: "center",
+                padding: "14px",
+                borderRadius: "16px",
+                background: "rgba(255, 255, 255, 0.05)",
+              }}
+            >
+              <span>
+                {service.icon} {service.name}
+              </span>
+              <strong style={{ color: badge.color }}>
+                {stock} restante(s) • {badge.label}
+              </strong>
+            </div>
+          );
+        })}
+      </div>
+
+      {stats?.lowStock?.length > 0 && (
+        <p className="admin-error">
+          ⚠️ Stock faible :{" "}
+          {stats.lowStock
+            .map((item) => `${item.service} (${item.count})`)
+            .join(", ")}
+        </p>
+      )}
+    </div>
+  );
+
+  const renderImportPanel = () => (
+    <div className="admin-import-box">
+      <h3>Importer des ressources</h3>
+
+      <p>
+        Colle une ressource par ligne. Exemple : <code>CODE-AAAA-1111</code>
+      </p>
+
+      <select
+        value={selectedService}
+        onChange={(e) => setSelectedService(e.target.value)}
+      >
+        {services.map((service) => (
+          <option key={service.name} value={service.name}>
+            {service.name}
+          </option>
+        ))}
+      </select>
+
+      <textarea
+        placeholder={"CODE-AAAA-1111\nCODE-BBBB-2222\nCODE-CCCC-3333"}
+        value={bulkText}
+        onChange={(e) => setBulkText(e.target.value)}
+      ></textarea>
+
+      <button className="generate-button" onClick={handleImport}>
+        Importer
+      </button>
+
+      {importStatus && <p className="import-status">{importStatus}</p>}
     </div>
   );
 
@@ -511,6 +827,13 @@ function App() {
     color: "rgba(255, 255, 255, 0.88)",
   };
 
+  const adminTabs = [
+    { key: "import", label: "Importer" },
+    { key: "settings", label: "VIP / Maintenance" },
+    { key: "stocks", label: "Stocks" },
+    { key: "history", label: "Historique" },
+  ];
+
   return (
     <div className="app">
       <div className="background-glow"></div>
@@ -535,6 +858,7 @@ function App() {
           <a href="#home">Accueil</a>
           <a href="#services">Services</a>
           <a href="#vip">Offres</a>
+          <a href="#rules">Règlement</a>
           <a href="#stats">Stats</a>
           <button onClick={handleAdminAccess}>Admin</button>
         </nav>
@@ -585,52 +909,13 @@ function App() {
 
           {cooldownRemaining > 0 && (
             <p className="admin-error">
-              Prochaine génération disponible dans{" "}
-              {formatCooldown(cooldownRemaining)}
+              Prochaine génération disponible dans {formatCooldown(cooldownRemaining)}
             </p>
           )}
 
           {accessError && <p className="admin-error">{accessError}</p>}
 
-          {loggedIn && usageInfo && (
-            <div
-              className="glass"
-              style={{
-                marginTop: "18px",
-                padding: "18px",
-                borderRadius: "20px",
-                display: "grid",
-                gap: "10px",
-                background: "rgba(255, 255, 255, 0.06)",
-              }}
-            >
-              <strong style={{ fontSize: "18px" }}>
-                Ton accès : {usageInfo.plan}
-              </strong>
-
-              {usageInfo.unlimited ? (
-                <p style={{ margin: 0, color: "#ffcc00", fontWeight: "800" }}>
-                  ♾️ Générations illimitées aujourd’hui
-                </p>
-              ) : (
-                <p style={{ margin: 0 }}>
-                  Générations aujourd’hui :{" "}
-                  <strong>
-                    {usageInfo.dailyUsed}/{usageInfo.dailyLimit}
-                  </strong>{" "}
-                  — Il t’en reste <strong>{usageInfo.dailyRemaining}</strong>
-                </p>
-              )}
-
-              <p style={{ margin: 0, opacity: 0.8 }}>
-                Cooldown :{" "}
-                {usageInfo.cooldownMs
-                  ? Math.round(usageInfo.cooldownMs / 60000)
-                  : "?"}{" "}
-                minute(s)
-              </p>
-            </div>
-          )}
+          {renderAccountCard()}
         </section>
       </main>
 
@@ -651,8 +936,8 @@ function App() {
         </div>
 
         <div>
-          <strong>24/7</strong>
-          <span>Disponible</span>
+          <strong>{usageInfo?.plan || "24/7"}</strong>
+          <span>{loggedIn ? "Ton accès" : "Disponible"}</span>
         </div>
       </section>
 
@@ -664,21 +949,24 @@ function App() {
 
         <div className="services-grid">
           {services.map((service) => {
-            const vipOnly = serviceSettings?.[service.name]?.vipOnly === true;
+            const settings = serviceSettings?.[service.name] || {};
+            const vipOnly = settings.vipOnly === true;
+            const maintenance = settings.maintenance === true;
             const userIsVip = user?.isVip === true;
             const lockedForUser = vipOnly && !userIsVip;
+            const stock = getStock(service.name);
+            const outOfStock = stock <= 0;
+            const badge = getServiceBadge(service.name);
 
             return (
               <div className="service-card glass" key={service.name}>
                 <div className="service-top">
                   <div className="service-icon">{service.icon}</div>
-                  <span>
-                    {vipOnly ? "VIP uniquement" : service.status}
-                  </span>
+                  <span style={{ color: badge.color }}>{badge.label}</span>
                 </div>
 
                 <h3>{service.name}</h3>
-                <p>{getStock(service.name)} ressource(s) disponible(s)</p>
+                <p>{stock} ressource(s) disponible(s)</p>
 
                 {vipOnly && (
                   <p
@@ -692,9 +980,26 @@ function App() {
                   </p>
                 )}
 
+                {maintenance && (
+                  <p
+                    style={{
+                      color: "#ff6b6b",
+                      fontWeight: "800",
+                      marginTop: "8px",
+                    }}
+                  >
+                    🛠️ Maintenance temporaire
+                  </p>
+                )}
+
                 <button
                   className="generate-button"
-                  disabled={cooldownRemaining > 0 || lockedForUser}
+                  disabled={
+                    cooldownRemaining > 0 ||
+                    lockedForUser ||
+                    maintenance ||
+                    outOfStock
+                  }
                   onClick={() => handleGenerate(service.name)}
                   style={
                     vipOnly
@@ -703,12 +1008,19 @@ function App() {
                             "linear-gradient(135deg, #ffcc00, #ff8c00)",
                           color: "#1a1200",
                           boxShadow: "0 0 18px rgba(255, 196, 0, 0.35)",
-                          cursor: lockedForUser ? "not-allowed" : "pointer",
+                          cursor:
+                            lockedForUser || maintenance || outOfStock
+                              ? "not-allowed"
+                              : "pointer",
                         }
                       : undefined
                   }
                 >
-                  {lockedForUser
+                  {maintenance
+                    ? "Maintenance"
+                    : outOfStock
+                    ? "Rupture de stock"
+                    : lockedForUser
                     ? "Uniquement membre VIP"
                     : cooldownRemaining > 0
                     ? `Patiente ${formatCooldown(cooldownRemaining)}`
@@ -795,8 +1107,7 @@ function App() {
             </div>
 
             <p style={{ color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.6 }}>
-              Pour les membres qui boostent le serveur et veulent plus de
-              générations.
+              Pour les membres qui boostent le serveur et veulent plus de générations.
             </p>
 
             <ul style={planListStyle}>
@@ -859,6 +1170,30 @@ function App() {
               Devenir VIP
             </button>
           </div>
+        </div>
+      </section>
+
+      <section className="vip-section" id="rules">
+        <div className="section-title">
+          <p>Règlement</p>
+          <h2>Utilisation responsable</h2>
+        </div>
+
+        <div className="glass" style={{ ...planCardStyle, marginTop: "24px" }}>
+          <ul style={planListStyle}>
+            <li style={planLiStyle}>
+              ✅ Utilise uniquement des ressources, codes ou licences que tu as le droit de distribuer.
+            </li>
+            <li style={planLiStyle}>
+              🚫 Le partage d’accès volés, piratés ou obtenus illégalement est interdit.
+            </li>
+            <li style={planLiStyle}>
+              🛠️ Certains services peuvent être mis en maintenance temporairement.
+            </li>
+            <li style={planLiStyle}>
+              📩 En cas de problème, contacte le support du serveur Discord.
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -943,41 +1278,29 @@ function App() {
                 </div>
               </div>
 
-              {renderVipLockPanel()}
-
-              <div className="admin-import-box">
-                <h3>Importer des ressources</h3>
-
-                <p>
-                  Colle une ressource par ligne. Exemple :{" "}
-                  <code>CODE-AAAA-1111</code>
-                </p>
-
-                <select
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                >
-                  {services.map((service) => (
-                    <option key={service.name} value={service.name}>
-                      {service.name}
-                    </option>
-                  ))}
-                </select>
-
-                <textarea
-                  placeholder={"CODE-AAAA-1111\nCODE-BBBB-2222\nCODE-CCCC-3333"}
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                ></textarea>
-
-                <button className="generate-button" onClick={handleImport}>
-                  Importer
-                </button>
-
-                {importStatus && <p className="import-status">{importStatus}</p>}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  margin: "18px 0",
+                }}
+              >
+                {adminTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    className={adminTab === tab.key ? "primary-button" : "secondary-button"}
+                    onClick={() => setAdminTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-              {renderHistoryTable()}
+              {adminTab === "import" && renderImportPanel()}
+              {adminTab === "settings" && renderSettingsPanel()}
+              {adminTab === "stocks" && renderStockPanel()}
+              {adminTab === "history" && renderHistoryTable()}
             </div>
           </div>
         </div>

@@ -69,6 +69,10 @@ const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
 const VIP_COOLDOWN_MS = 1 * 60 * 1000;
 const BOOST_COOLDOWN_MS = 2 * 60 * 1000;
 
+const GENERATE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const GENERATE_RATE_LIMIT_MAX = 20;
+const generateAttempts = new Map();
+
 function getCooldownForUser(user) {
   const roles = user?.roles || [];
 
@@ -100,6 +104,20 @@ function getDailyLimitForUser(user) {
   return 6;
 }
 
+function getPlanForUser(user) {
+  const roles = user?.roles || [];
+
+  if (roles.includes(process.env.DISCORD_VIP_ROLE_ID)) {
+    return "VIP";
+  }
+
+  if (roles.includes(process.env.DISCORD_BOOST_ROLE_ID)) {
+    return "Boost";
+  }
+
+  return "Gratuit";
+}
+
 function isVipUser(user) {
   const roles = user?.roles || [];
   return roles.includes(process.env.DISCORD_VIP_ROLE_ID);
@@ -129,6 +147,111 @@ function requireAdmin(req, res, next) {
   }
 
   next();
+}
+
+function getTodayStart() {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  return todayStart;
+}
+
+function getTomorrowStart() {
+  const tomorrowStart = new Date();
+  tomorrowStart.setHours(24, 0, 0, 0);
+  return tomorrowStart;
+}
+
+function checkGenerateRateLimit(req) {
+  const key = req.session.user?.id || req.ip || "unknown";
+  const now = Date.now();
+  const oldAttempts = generateAttempts.get(key) || [];
+  const recentAttempts = oldAttempts.filter(
+    (timestamp) => now - timestamp < GENERATE_RATE_LIMIT_WINDOW_MS
+  );
+
+  if (recentAttempts.length >= GENERATE_RATE_LIMIT_MAX) {
+    generateAttempts.set(key, recentAttempts);
+    return false;
+  }
+
+  recentAttempts.push(now);
+  generateAttempts.set(key, recentAttempts);
+  return true;
+}
+
+async function getUsageForUser(user) {
+  const userId = user.id;
+  const dailyLimit = getDailyLimitForUser(user);
+  const cooldownMs = getCooldownForUser(user);
+  const plan = getPlanForUser(user);
+  const todayStart = getTodayStart();
+  const resetAt = getTomorrowStart();
+
+  const { count: dailyUsed, error } = await supabase
+    .from("history")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", todayStart.toISOString());
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    plan,
+    dailyLimit,
+    dailyUsed: dailyUsed || 0,
+    dailyRemaining:
+      dailyLimit === null ? null : Math.max(0, dailyLimit - (dailyUsed || 0)),
+    cooldownMs,
+    unlimited: dailyLimit === null,
+    resetAt: resetAt.toISOString(),
+  };
+}
+
+async function sendDiscordLog({ user, service, plan }) {
+  const webhookUrl = process.env.DISCORD_LOG_WEBHOOK_URL;
+
+  if (!webhookUrl) {
+    return;
+  }
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "Nouvelle génération",
+            color: 16711680,
+            fields: [
+              {
+                name: "Utilisateur",
+                value: `${user.username || "Inconnu"} (${user.id})`,
+                inline: false,
+              },
+              {
+                name: "Service",
+                value: service,
+                inline: true,
+              },
+              {
+                name: "Accès",
+                value: plan,
+                inline: true,
+              },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  } catch (error) {
+    console.error("Erreur webhook Discord :", error);
+  }
 }
 
 app.get("/", (req, res) => {
@@ -274,8 +397,7 @@ app.get("/api/stats", async (req, res) => {
       return res.status(500).json({ error: "Erreur lecture ressources." });
     }
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = getTodayStart();
 
     const { data: todayHistory, error: historyError } = await supabase
       .from("history")
@@ -288,11 +410,18 @@ app.get("/api/stats", async (req, res) => {
     }
 
     const byService = {};
+    const lowStock = [];
 
     for (const service of allowedServices) {
-      byService[service] = availableResources.filter(
+      const count = availableResources.filter(
         (item) => item.service === service
       ).length;
+
+      byService[service] = count;
+
+      if (count <= 5) {
+        lowStock.push({ service, count });
+      }
     }
 
     res.json({
@@ -300,6 +429,7 @@ app.get("/api/stats", async (req, res) => {
       totalGeneratedToday: todayHistory.length,
       totalServices: allowedServices.length,
       byService,
+      lowStock,
     });
   } catch (error) {
     console.error(error);
@@ -307,11 +437,27 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
+app.get("/api/usage", requireLogin, async (req, res) => {
+  try {
+    const usage = await getUsageForUser(req.session.user);
+
+    res.json({
+      success: true,
+      ...usage,
+    });
+  } catch (error) {
+    console.error("Erreur serveur usage :", error);
+    res.status(500).json({
+      error: "Erreur serveur utilisation.",
+    });
+  }
+});
+
 app.get("/api/service-settings", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("service_settings")
-      .select("service, vip_only");
+      .select("*");
 
     if (error) {
       console.error("Erreur lecture service settings :", error);
@@ -325,12 +471,14 @@ app.get("/api/service-settings", async (req, res) => {
     for (const service of allowedServices) {
       settings[service] = {
         vipOnly: false,
+        maintenance: false,
       };
     }
 
     for (const item of data || []) {
       settings[item.service] = {
         vipOnly: item.vip_only === true,
+        maintenance: item.maintenance === true,
       };
     }
 
@@ -349,7 +497,7 @@ app.get("/api/service-settings", async (req, res) => {
 app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
   try {
     const { service } = req.params;
-    const { vipOnly } = req.body;
+    const { vipOnly, maintenance } = req.body;
 
     if (!allowedServices.includes(service)) {
       return res.status(400).json({
@@ -357,23 +505,45 @@ app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
       });
     }
 
+    const { data: existing, error: existingError } = await supabase
+      .from("service_settings")
+      .select("*")
+      .eq("service", service)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("Erreur lecture setting existant :", existingError);
+      return res.status(500).json({
+        error: "Erreur lecture service.",
+      });
+    }
+
+    const nextVipOnly =
+      typeof vipOnly === "boolean" ? vipOnly : existing?.vip_only === true;
+    const nextMaintenance =
+      typeof maintenance === "boolean"
+        ? maintenance
+        : existing?.maintenance === true;
+
     const { error } = await supabase.from("service_settings").upsert({
       service,
-      vip_only: vipOnly === true,
+      vip_only: nextVipOnly,
+      maintenance: nextMaintenance,
       updated_at: new Date().toISOString(),
     });
 
     if (error) {
       console.error("Erreur mise à jour service settings :", error);
       return res.status(500).json({
-        error: "Erreur mise à jour service.",
+        error: "Erreur mise à jour service. Vérifie que la colonne maintenance existe dans Supabase.",
       });
     }
 
     res.json({
       success: true,
       service,
-      vipOnly: vipOnly === true,
+      vipOnly: nextVipOnly,
+      maintenance: nextMaintenance,
     });
   } catch (error) {
     console.error("Erreur serveur service settings :", error);
@@ -429,6 +599,12 @@ app.post("/api/resources/import", requireAdmin, async (req, res) => {
 
 app.post("/api/generate", requireLogin, async (req, res) => {
   try {
+    if (!checkGenerateRateLimit(req)) {
+      return res.status(429).json({
+        error: "Trop de tentatives. Réessaie dans une minute.",
+      });
+    }
+
     const { service } = req.body;
 
     if (!allowedServices.includes(service)) {
@@ -439,14 +615,21 @@ app.post("/api/generate", requireLogin, async (req, res) => {
 
     const { data: serviceSetting, error: serviceSettingError } = await supabase
       .from("service_settings")
-      .select("vip_only")
+      .select("*")
       .eq("service", service)
       .maybeSingle();
 
     if (serviceSettingError) {
       console.error("Erreur lecture VIP service :", serviceSettingError);
       return res.status(500).json({
-        error: "Erreur vérification VIP.",
+        error: "Erreur vérification service.",
+      });
+    }
+
+    if (serviceSetting?.maintenance === true) {
+      return res.status(503).json({
+        error: "Ce service est actuellement en maintenance.",
+        maintenance: true,
       });
     }
 
@@ -460,10 +643,10 @@ app.post("/api/generate", requireLogin, async (req, res) => {
     const userId = req.session.user.id;
     const cooldownMs = getCooldownForUser(req.session.user);
     const dailyLimit = getDailyLimitForUser(req.session.user);
+    const plan = getPlanForUser(req.session.user);
     const now = Date.now();
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = getTodayStart();
+    const resetAt = getTomorrowStart();
 
     const { count: dailyCount, error: dailyCountError } = await supabase
       .from("history")
@@ -484,6 +667,7 @@ app.post("/api/generate", requireLogin, async (req, res) => {
         dailyLimit,
         dailyUsed: dailyCount || 0,
         dailyRemaining: 0,
+        resetAt: resetAt.toISOString(),
       });
     }
 
@@ -520,6 +704,7 @@ app.post("/api/generate", requireLogin, async (req, res) => {
             dailyLimit === null
               ? null
               : Math.max(0, dailyLimit - (dailyCount || 0)),
+          resetAt: resetAt.toISOString(),
         });
       }
     }
@@ -586,70 +771,27 @@ app.post("/api/generate", requireLogin, async (req, res) => {
 
     const newDailyUsed = (dailyCount || 0) + 1;
 
+    await sendDiscordLog({
+      user: req.session.user,
+      service,
+      plan,
+    });
+
     res.json({
       success: true,
       service,
       resource: resource.value,
       cooldownMs,
+      plan,
       dailyLimit,
       dailyUsed: dailyLimit === null ? null : newDailyUsed,
       dailyRemaining:
         dailyLimit === null ? null : Math.max(0, dailyLimit - newDailyUsed),
+      resetAt: resetAt.toISOString(),
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erreur serveur génération." });
-  }
-});
-
-
-app.get("/api/usage", requireLogin, async (req, res) => {
-  try {
-    const userId = req.session.user.id;
-    const dailyLimit = getDailyLimitForUser(req.session.user);
-    const cooldownMs = getCooldownForUser(req.session.user);
-
-    const roles = req.session.user.roles || [];
-
-    let plan = "Gratuit";
-
-    if (roles.includes(process.env.DISCORD_VIP_ROLE_ID)) {
-      plan = "VIP";
-    } else if (roles.includes(process.env.DISCORD_BOOST_ROLE_ID)) {
-      plan = "Boost";
-    }
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const { count: dailyUsed, error } = await supabase
-      .from("history")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", todayStart.toISOString());
-
-    if (error) {
-      console.error("Erreur lecture usage :", error);
-      return res.status(500).json({
-        error: "Erreur lecture utilisation.",
-      });
-    }
-
-    res.json({
-      success: true,
-      plan,
-      dailyLimit,
-      dailyUsed: dailyUsed || 0,
-      dailyRemaining:
-        dailyLimit === null ? null : Math.max(0, dailyLimit - (dailyUsed || 0)),
-      cooldownMs,
-      unlimited: dailyLimit === null,
-    });
-  } catch (error) {
-    console.error("Erreur serveur usage :", error);
-    res.status(500).json({
-      error: "Erreur serveur utilisation.",
-    });
   }
 });
 
@@ -661,7 +803,7 @@ app.get("/api/history", requireAdmin, async (req, res) => {
       .from("history")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(250);
 
     if (error) {
       console.error("Erreur Supabase historique :", error);
