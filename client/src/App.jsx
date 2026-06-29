@@ -975,9 +975,7 @@ function App() {
   }}
 >
   ⚠️ Information importante : tout les comptes ne sont pas forcément
-  fonctionnelles, mais la majorité le sont. En cas de problème, contacte le
-  support.
-</div>
+  fonctionnelles, mais la majorité le sont.
 
           <div className="hero-tags">
             <div>⚡ Rapide</div>
