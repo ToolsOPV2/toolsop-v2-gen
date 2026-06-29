@@ -409,7 +409,17 @@ app.get("/api/stats", async (req, res) => {
       return res.status(500).json({ error: "Erreur lecture historique." });
     }
 
+    const { data: allHistory, error: popularError } = await supabase
+      .from("history")
+      .select("service")
+      .limit(1000);
+
+    if (popularError) {
+      console.error("Erreur lecture services populaires :", popularError);
+    }
+
     const byService = {};
+    const generatedByService = {};
     const lowStock = [];
 
     for (const service of allowedServices) {
@@ -418,11 +428,28 @@ app.get("/api/stats", async (req, res) => {
       ).length;
 
       byService[service] = count;
+      generatedByService[service] = 0;
 
       if (count <= 5) {
         lowStock.push({ service, count });
       }
     }
+
+    for (const item of allHistory || []) {
+      if (allowedServices.includes(item.service)) {
+        generatedByService[item.service] =
+          (generatedByService[item.service] || 0) + 1;
+      }
+    }
+
+    const popularServices = allowedServices
+      .map((service) => ({
+        service,
+        count: generatedByService[service] || 0,
+        stock: byService[service] || 0,
+      }))
+      .sort((a, b) => b.count - a.count || b.stock - a.stock)
+      .slice(0, 3);
 
     res.json({
       totalAvailable: availableResources.length,
@@ -430,6 +457,7 @@ app.get("/api/stats", async (req, res) => {
       totalServices: allowedServices.length,
       byService,
       lowStock,
+      popularServices,
     });
   } catch (error) {
     console.error(error);
@@ -520,6 +548,7 @@ app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
 
     const nextVipOnly =
       typeof vipOnly === "boolean" ? vipOnly : existing?.vip_only === true;
+
     const nextMaintenance =
       typeof maintenance === "boolean"
         ? maintenance
@@ -535,7 +564,8 @@ app.patch("/api/service-settings/:service", requireAdmin, async (req, res) => {
     if (error) {
       console.error("Erreur mise à jour service settings :", error);
       return res.status(500).json({
-        error: "Erreur mise à jour service. Vérifie que la colonne maintenance existe dans Supabase.",
+        error:
+          "Erreur mise à jour service. Vérifie que la colonne maintenance existe dans Supabase.",
       });
     }
 
