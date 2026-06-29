@@ -775,12 +775,16 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       });
     }
 
-    const { error: historyError } = await supabase.from("history").insert({
-      service,
-      user_id: userId,
-      username: req.session.user.username,
-      resource_value: resource.value,
-    });
+    const { data: historyEntry, error: historyError } = await supabase
+      .from("history")
+      .insert({
+        service,
+        user_id: userId,
+        username: req.session.user.username,
+        resource_value: resource.value,
+      })
+      .select("id")
+      .single();
 
     if (historyError) {
       console.error("Erreur historique génération :", historyError);
@@ -809,6 +813,7 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       success: true,
       service,
       resource: resource.value,
+      historyId: historyEntry?.id || null,
       cooldownMs,
       plan,
       dailyLimit,
@@ -820,6 +825,75 @@ app.post("/api/generate", requireLogin, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erreur serveur génération." });
+  }
+});
+
+
+app.patch("/api/history/:id/feedback", requireLogin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["works", "not_working"].includes(status)) {
+      return res.status(400).json({
+        error: "Avis invalide.",
+      });
+    }
+
+    const { data: historyItem, error: readError } = await supabase
+      .from("history")
+      .select("id, user_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (readError) {
+      console.error("Erreur lecture avis historique :", readError);
+      return res.status(500).json({
+        error: "Erreur lecture historique.",
+      });
+    }
+
+    if (!historyItem) {
+      return res.status(404).json({
+        error: "Génération introuvable.",
+      });
+    }
+
+    if (historyItem.user_id !== req.session.user.id && !req.session.user.isAdmin) {
+      return res.status(403).json({
+        error: "Tu ne peux voter que pour tes propres générations.",
+      });
+    }
+
+    const feedbackAt = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from("history")
+      .update({
+        feedback_status: status,
+        feedback_at: feedbackAt,
+      })
+      .eq("id", id);
+
+    if (updateError) {
+      console.error("Erreur mise à jour avis :", updateError);
+      return res.status(500).json({
+        error:
+          "Erreur enregistrement avis. Vérifie les colonnes feedback_status et feedback_at dans Supabase.",
+      });
+    }
+
+    res.json({
+      success: true,
+      id,
+      feedbackStatus: status,
+      feedbackAt,
+    });
+  } catch (error) {
+    console.error("Erreur serveur avis :", error);
+    res.status(500).json({
+      error: "Erreur serveur avis.",
+    });
   }
 });
 

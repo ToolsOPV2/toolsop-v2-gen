@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+    import { useEffect, useMemo, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const SUPPORT_URL = import.meta.env.VITE_DISCORD_SUPPORT_URL || "";
@@ -27,6 +27,8 @@ function App() {
 
   const [stats, setStats] = useState(null);
   const [generatedResource, setGeneratedResource] = useState("");
+  const [generatedHistoryId, setGeneratedHistoryId] = useState(null);
+  const [feedbackStatus, setFeedbackStatus] = useState("");
   const [resultOpen, setResultOpen] = useState(false);
 
   const [cooldownUntil, setCooldownUntil] = useState(null);
@@ -222,6 +224,8 @@ function App() {
     setUser(null);
     setUsageInfo(null);
     setLastDailyInfo(null);
+    setGeneratedHistoryId(null);
+    setFeedbackStatus("");
   };
 
   const handleAdminAccess = () => {
@@ -390,6 +394,8 @@ function App() {
       }
 
       setGeneratedResource(`${data.service} : ${data.resource}`);
+      setGeneratedHistoryId(data.historyId || null);
+      setFeedbackStatus("");
       setResultOpen(true);
 
       setLastDailyInfo({
@@ -417,6 +423,58 @@ function App() {
       alert("Code copié !");
     } catch {
       alert("Impossible de copier automatiquement.");
+    }
+  };
+
+  const handleFeedback = async (status) => {
+    if (!generatedHistoryId) {
+      alert("Impossible d’enregistrer l’avis pour cette génération.");
+      return;
+    }
+
+    try {
+      setFeedbackStatus("Enregistrement de ton avis...");
+
+      const response = await fetch(`${API_URL}/api/history/${generatedHistoryId}/feedback`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setFeedbackStatus("");
+        alert(data.error || "Impossible d’enregistrer l’avis.");
+        return;
+      }
+
+      setFeedbackStatus(
+        status === "works"
+          ? "Merci ! Avis enregistré : fonctionne."
+          : "Merci ! Avis enregistré : ne fonctionne pas."
+      );
+
+      setHistory((previous) =>
+        previous.map((item) =>
+          item.id === generatedHistoryId
+            ? {
+                ...item,
+                feedback_status: status,
+                feedback_at: data.feedbackAt || new Date().toISOString(),
+              }
+            : item
+        )
+      );
+
+      loadHistory();
+    } catch (error) {
+      console.error(error);
+      setFeedbackStatus("");
+      alert("Impossible de contacter le serveur.");
     }
   };
 
@@ -490,13 +548,52 @@ function App() {
     });
   }, [history, historySearch, historyServiceFilter]);
 
+  const getFeedbackLabel = (status) => {
+    if (status === "works") return "Fonctionne";
+    if (status === "not_working") return "Ne fonctionne pas";
+    return "Pas encore voté";
+  };
+
+  const renderFeedbackBadge = (status) => {
+    const isWorking = status === "works";
+    const isNotWorking = status === "not_working";
+
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          width: "fit-content",
+          padding: "6px 10px",
+          borderRadius: "999px",
+          fontWeight: "900",
+          fontSize: "12px",
+          background: isWorking
+            ? "rgba(0, 255, 120, 0.14)"
+            : isNotWorking
+            ? "rgba(255, 70, 70, 0.14)"
+            : "rgba(255, 255, 255, 0.08)",
+          color: isWorking ? "#66ff99" : isNotWorking ? "#ff6b6b" : "rgba(255, 255, 255, 0.75)",
+          border: isWorking
+            ? "1px solid rgba(0, 255, 120, 0.28)"
+            : isNotWorking
+            ? "1px solid rgba(255, 70, 70, 0.28)"
+            : "1px solid rgba(255, 255, 255, 0.12)",
+        }}
+      >
+        {isWorking ? "✅ Fonctionne" : isNotWorking ? "❌ Ne fonctionne pas" : "⏳ En attente"}
+      </span>
+    );
+  };
+
   const exportHistoryCsv = () => {
     const rows = [
-      ["Membre", "Service", "Ressource", "Date"],
+      ["Membre", "Service", "Ressource", "Avis", "Date"],
       ...filteredHistory.map((item) => [
         item.username || item.user_id || "Utilisateur",
         item.service || "",
         item.resource_value || "Ancienne génération non stockée",
+        getFeedbackLabel(item.feedback_status),
         formatDate(item.created_at),
       ]),
     ];
@@ -658,6 +755,7 @@ function App() {
                 <th>Membre</th>
                 <th>Service</th>
                 <th>Ressource générée</th>
+                <th>Avis</th>
                 <th>Date</th>
               </tr>
             </thead>
@@ -672,6 +770,7 @@ function App() {
                       {item.resource_value || "Ancienne génération non stockée"}
                     </code>
                   </td>
+                  <td>{renderFeedbackBadge(item.feedback_status)}</td>
                   <td>{formatDate(item.created_at)}</td>
                 </tr>
               ))}
@@ -1432,6 +1531,51 @@ function App() {
 
             <div className="result-code">{generatedResource}</div>
 
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: "12px",
+                marginTop: "18px",
+              }}
+            >
+              <button
+                onClick={() => handleFeedback("works")}
+                style={{
+                  border: "none",
+                  borderRadius: "16px",
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, #00c853, #007a33)",
+                  color: "white",
+                  fontWeight: "900",
+                  cursor: generatedHistoryId ? "pointer" : "not-allowed",
+                  boxShadow: "0 0 18px rgba(0, 200, 83, 0.28)",
+                }}
+                disabled={!generatedHistoryId}
+              >
+                ✅ Fonctionne
+              </button>
+
+              <button
+                onClick={() => handleFeedback("not_working")}
+                style={{
+                  border: "none",
+                  borderRadius: "16px",
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, #ff4d4d, #9b0000)",
+                  color: "white",
+                  fontWeight: "900",
+                  cursor: generatedHistoryId ? "pointer" : "not-allowed",
+                  boxShadow: "0 0 18px rgba(255, 77, 77, 0.28)",
+                }}
+                disabled={!generatedHistoryId}
+              >
+                ❌ Ne fonctionne pas
+              </button>
+            </div>
+
+            {feedbackStatus && <p className="import-status">{feedbackStatus}</p>}
+
             {lastDailyInfo && (
               <p className="import-status">
                 {lastDailyInfo.dailyLimit === null
@@ -1531,3 +1675,4 @@ function App() {
 }
 
 export default App;
+    
