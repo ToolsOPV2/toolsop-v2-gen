@@ -602,6 +602,57 @@ app.post("/api/generate", requireLogin, async (req, res) => {
   }
 });
 
+
+app.get("/api/usage", requireLogin, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const dailyLimit = getDailyLimitForUser(req.session.user);
+    const cooldownMs = getCooldownForUser(req.session.user);
+
+    const roles = req.session.user.roles || [];
+
+    let plan = "Gratuit";
+
+    if (roles.includes(process.env.DISCORD_VIP_ROLE_ID)) {
+      plan = "VIP";
+    } else if (roles.includes(process.env.DISCORD_BOOST_ROLE_ID)) {
+      plan = "Boost";
+    }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const { count: dailyUsed, error } = await supabase
+      .from("history")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", todayStart.toISOString());
+
+    if (error) {
+      console.error("Erreur lecture usage :", error);
+      return res.status(500).json({
+        error: "Erreur lecture utilisation.",
+      });
+    }
+
+    res.json({
+      success: true,
+      plan,
+      dailyLimit,
+      dailyUsed: dailyUsed || 0,
+      dailyRemaining:
+        dailyLimit === null ? null : Math.max(0, dailyLimit - (dailyUsed || 0)),
+      cooldownMs,
+      unlimited: dailyLimit === null,
+    });
+  } catch (error) {
+    console.error("Erreur serveur usage :", error);
+    res.status(500).json({
+      error: "Erreur serveur utilisation.",
+    });
+  }
+});
+
 app.get("/api/history", requireAdmin, async (req, res) => {
   try {
     console.log("Route /api/history appelée par :", req.session.user?.username);

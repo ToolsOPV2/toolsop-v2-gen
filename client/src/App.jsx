@@ -36,6 +36,7 @@ function App() {
   const [serviceSettings, setServiceSettings] = useState({});
   const [vipLockStatus, setVipLockStatus] = useState("");
   const [lastDailyInfo, setLastDailyInfo] = useState(null);
+  const [usageInfo, setUsageInfo] = useState(null);
 
   const loadStats = () => {
     fetch(`${API_URL}/api/stats`, {
@@ -56,6 +57,23 @@ function App() {
       })
       .catch(() => {
         setServiceSettings({});
+      });
+  };
+
+  const loadUsageInfo = () => {
+    fetch(`${API_URL}/api/usage`, {
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setUsageInfo(data);
+        } else {
+          setUsageInfo(null);
+        }
+      })
+      .catch(() => {
+        setUsageInfo(null);
       });
   };
 
@@ -90,6 +108,12 @@ function App() {
       .then((data) => {
         setLoggedIn(data.loggedIn);
         setUser(data.user);
+
+        if (data.loggedIn) {
+          loadUsageInfo();
+        } else {
+          setUsageInfo(null);
+        }
       })
       .catch(() => {
         setLoggedIn(false);
@@ -191,6 +215,7 @@ function App() {
       setBulkText("");
       loadStats();
       loadHistory();
+      loadUsageInfo();
     } catch (error) {
       console.error(error);
       setImportStatus("Impossible de contacter le serveur.");
@@ -279,6 +304,23 @@ function App() {
           return;
         }
 
+        if (data.dailyLimit !== undefined) {
+          setUsageInfo({
+            success: true,
+            plan:
+              data.dailyLimit === null
+                ? "VIP"
+                : data.dailyLimit === 15
+                ? "Boost"
+                : "Gratuit",
+            dailyLimit: data.dailyLimit,
+            dailyUsed: data.dailyUsed || 0,
+            dailyRemaining: data.dailyRemaining || 0,
+            cooldownMs: data.cooldownMs || null,
+            unlimited: data.dailyLimit === null,
+          });
+        }
+
         alert(data.error || "Erreur pendant la génération.");
         return;
       }
@@ -292,11 +334,28 @@ function App() {
         dailyRemaining: data.dailyRemaining,
       });
 
+      setUsageInfo((previous) => ({
+        ...(previous || {}),
+        success: true,
+        plan:
+          data.dailyLimit === null
+            ? "VIP"
+            : data.dailyLimit === 15
+            ? "Boost"
+            : "Gratuit",
+        dailyLimit: data.dailyLimit,
+        dailyUsed: data.dailyUsed,
+        dailyRemaining: data.dailyRemaining,
+        cooldownMs: data.cooldownMs,
+        unlimited: data.dailyLimit === null,
+      }));
+
       const cooldownMs = data.cooldownMs || 5 * 60 * 1000;
       setCooldownUntil(Date.now() + cooldownMs);
 
       loadStats();
       loadHistory();
+      loadUsageInfo();
     } catch (error) {
       console.error(error);
       alert("Impossible de contacter le serveur.");
@@ -532,6 +591,46 @@ function App() {
           )}
 
           {accessError && <p className="admin-error">{accessError}</p>}
+
+          {loggedIn && usageInfo && (
+            <div
+              className="glass"
+              style={{
+                marginTop: "18px",
+                padding: "18px",
+                borderRadius: "20px",
+                display: "grid",
+                gap: "10px",
+                background: "rgba(255, 255, 255, 0.06)",
+              }}
+            >
+              <strong style={{ fontSize: "18px" }}>
+                Ton accès : {usageInfo.plan}
+              </strong>
+
+              {usageInfo.unlimited ? (
+                <p style={{ margin: 0, color: "#ffcc00", fontWeight: "800" }}>
+                  ♾️ Générations illimitées aujourd’hui
+                </p>
+              ) : (
+                <p style={{ margin: 0 }}>
+                  Générations aujourd’hui :{" "}
+                  <strong>
+                    {usageInfo.dailyUsed}/{usageInfo.dailyLimit}
+                  </strong>{" "}
+                  — Il t’en reste <strong>{usageInfo.dailyRemaining}</strong>
+                </p>
+              )}
+
+              <p style={{ margin: 0, opacity: 0.8 }}>
+                Cooldown :{" "}
+                {usageInfo.cooldownMs
+                  ? Math.round(usageInfo.cooldownMs / 60000)
+                  : "?"}{" "}
+                minute(s)
+              </p>
+            </div>
+          )}
         </section>
       </main>
 
