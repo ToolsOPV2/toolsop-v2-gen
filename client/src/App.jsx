@@ -47,13 +47,25 @@ function App() {
   const [resetCountdown, setResetCountdown] = useState("");
 
 
-  const loadStats = () => {
-    fetch(`${API_URL}/api/stats`, {
-      credentials: "include",
-    })
-      .then((res) => res.json())
-      .then((data) => setStats(data))
-      .catch(() => setStats(null));
+  const loadStats = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/stats`, {
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setStats(null);
+        return null;
+      }
+
+      setStats(data);
+      return data;
+    } catch {
+      setStats(null);
+      return null;
+    }
   };
 
   const loadServiceSettings = () => {
@@ -278,11 +290,24 @@ function App() {
       }
 
       setImportStatus(
-        `${data.added} ressource(s) importée(s) pour ${selectedService}.`
+        `${data.added} ressource(s) importée(s) pour ${selectedService}. Stock actuel : ${
+          data.stockCount ?? "mise à jour en cours"
+        }.`
       );
 
       setBulkText("");
-      loadStats();
+
+      if (typeof data.stockCount === "number") {
+        setStats((previousStats) => ({
+          ...(previousStats || {}),
+          byService: {
+            ...((previousStats && previousStats.byService) || {}),
+            [selectedService]: data.stockCount,
+          },
+        }));
+      }
+
+      await loadStats();
       loadHistory();
       loadUsageInfo();
     } catch (error) {
@@ -385,15 +410,8 @@ function App() {
     const vipOnly = serviceSettings?.[serviceName]?.vipOnly === true;
     const maintenance = serviceSettings?.[serviceName]?.maintenance === true;
     const userIsVip = user?.isVip === true;
-    const stock = getStock(serviceName);
-
     if (maintenance) {
       alert("Ce service est actuellement en maintenance.");
-      return;
-    }
-
-    if (stock <= 0) {
-      handleDiscordLogin();
       return;
     }
 
@@ -422,6 +440,12 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 404) {
+          await loadStats();
+          handleDiscordLogin();
+          return;
+        }
+
         if (response.status === 429 && data.cooldownRemainingMs) {
           setCooldownUntil(Date.now() + data.cooldownRemainingMs);
           alert(`Tu dois attendre ${formatCooldown(data.cooldownRemainingMs)}.`);
