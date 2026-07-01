@@ -58,6 +58,8 @@ const allowedServices = [
   "Steam",
   "Disney",
   "Netflix",
+  "Crunchyroll",
+  "HBO Plus",
   "Fortnite",
   "Xbox",
   "Hotmail",
