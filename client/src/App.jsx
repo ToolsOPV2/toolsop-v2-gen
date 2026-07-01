@@ -7,8 +7,6 @@ const services = [
   { icon: "🎮", name: "Steam", status: "Disponible" },
   { icon: "🎬", name: "Disney", status: "Disponible" },
   { icon: "📺", name: "Netflix", status: "Disponible" },
-  { icon: "🍥", name: "Crunchyroll", status: "Disponible" },
-  { icon: "🎞️", name: "HBO Plus", status: "Disponible" },
   { icon: "🎯", name: "Fortnite", status: "Disponible" },
   { icon: "🟢", name: "Xbox", status: "Disponible" },
   { icon: "✉️", name: "Hotmail", status: "Disponible" },
