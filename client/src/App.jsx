@@ -1792,116 +1792,152 @@ function App() {
 
             {showCloseAnyway && !feedbackChoice && (
               <div
-                role="alert"
+                role="alertdialog"
+                aria-modal="true"
                 style={{
-                  marginTop: "18px",
-                  padding: "24px",
-                  borderRadius: "26px",
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 99999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "20px",
                   background:
-                    "linear-gradient(135deg, rgba(120, 0, 20, 0.62), rgba(255, 0, 64, 0.22))",
-                  border: "1px solid rgba(255, 70, 90, 0.95)",
-                  boxShadow:
-                    "0 0 30px rgba(255, 0, 76, 0.55), inset 0 0 24px rgba(255, 50, 80, 0.14)",
-                  backdropFilter: "blur(16px)",
-                  WebkitBackdropFilter: "blur(16px)",
-                  textAlign: "center",
+                    "radial-gradient(circle at center, rgba(255, 0, 76, 0.20), rgba(0, 0, 0, 0.72))",
+                  backdropFilter: "blur(10px)",
+                  WebkitBackdropFilter: "blur(10px)",
                 }}
               >
                 <div
                   style={{
-                    fontSize: "46px",
-                    lineHeight: "1",
-                    marginBottom: "10px",
-                    filter: "drop-shadow(0 0 14px rgba(255, 0, 76, 0.9))",
+                    width: "min(760px, 100%)",
+                    maxHeight: "90vh",
+                    overflowY: "auto",
+                    padding: "clamp(24px, 5vw, 42px)",
+                    borderRadius: "30px",
+                    background:
+                      "linear-gradient(135deg, rgba(120, 0, 20, 0.78), rgba(255, 0, 64, 0.28))",
+                    border: "1px solid rgba(255, 70, 90, 0.95)",
+                    boxShadow:
+                      "0 0 45px rgba(255, 0, 76, 0.75), 0 0 120px rgba(255, 0, 76, 0.28), inset 0 0 30px rgba(255, 50, 80, 0.18)",
+                    backdropFilter: "blur(18px)",
+                    WebkitBackdropFilter: "blur(18px)",
+                    textAlign: "center",
+                    animation: "warningPulse 1.4s ease-in-out infinite alternate",
                   }}
                 >
-                  ⚠️
-                </div>
-
-                <h2
-                  style={{
-                    margin: "0 0 10px",
-                    color: "white",
-                    fontSize: "clamp(24px, 5vw, 38px)",
-                    fontWeight: "1000",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                    textShadow:
-                      "0 0 12px rgba(255, 0, 76, 0.95), 0 0 28px rgba(255, 0, 76, 0.55)",
-                  }}
-                >
-                  Note avant de fermer
-                </h2>
-
-                <p
-                  style={{
-                    margin: "0 auto 18px",
-                    maxWidth: "620px",
-                    color: "rgba(255, 255, 255, 0.92)",
-                    fontSize: "17px",
-                    fontWeight: "800",
-                    lineHeight: "1.6",
-                  }}
-                >
-                  Dis-nous si la ressource fonctionne ou non. Tu peux encore
-                  changer ton choix tant que cette fenêtre est ouverte.
-                </p>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-                    gap: "12px",
-                    marginTop: "18px",
-                  }}
-                >
-                  <button
-                    onClick={() => handleFeedback("works")}
+                  <div
                     style={{
-                      border: "none",
-                      borderRadius: "18px",
-                      padding: "14px 16px",
-                      fontWeight: "1000",
-                      cursor: "pointer",
-                      color: "white",
-                      background:
-                        "linear-gradient(135deg, rgba(0, 200, 83, 0.95), rgba(0, 120, 55, 0.95))",
-                      boxShadow: "0 0 18px rgba(0, 255, 120, 0.38)",
+                      fontSize: "clamp(58px, 12vw, 92px)",
+                      lineHeight: "1",
+                      marginBottom: "14px",
+                      filter: "drop-shadow(0 0 18px rgba(255, 0, 76, 0.95))",
                     }}
                   >
-                    🟢 Fonctionne
-                  </button>
+                    ⚠️
+                  </div>
 
-                  <button
-                    onClick={() => handleFeedback("not_working")}
+                  <h2
                     style={{
-                      border: "none",
-                      borderRadius: "18px",
-                      padding: "14px 16px",
-                      fontWeight: "1000",
-                      cursor: "pointer",
+                      margin: "0 0 12px",
                       color: "white",
-                      background:
-                        "linear-gradient(135deg, rgba(255, 77, 77, 0.98), rgba(130, 0, 18, 0.98))",
-                      boxShadow: "0 0 20px rgba(255, 0, 76, 0.58)",
+                      fontSize: "clamp(30px, 6vw, 54px)",
+                      fontWeight: "1000",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                      textShadow:
+                        "0 0 14px rgba(255, 0, 76, 1), 0 0 34px rgba(255, 0, 76, 0.7)",
                     }}
                   >
-                    🔴 Ne fonctionne pas
+                    Attention
+                  </h2>
+
+                  <p
+                    style={{
+                      margin: "0 auto 10px",
+                      maxWidth: "650px",
+                      color: "white",
+                      fontSize: "clamp(18px, 3vw, 24px)",
+                      fontWeight: "1000",
+                      lineHeight: "1.45",
+                      textShadow: "0 0 14px rgba(255, 0, 76, 0.55)",
+                    }}
+                  >
+                    Avant de fermer, indique si la ressource fonctionne ou non.
+                  </p>
+
+                  <p
+                    style={{
+                      margin: "0 auto 22px",
+                      maxWidth: "650px",
+                      color: "rgba(255, 255, 255, 0.86)",
+                      fontSize: "15px",
+                      fontWeight: "800",
+                      lineHeight: "1.6",
+                    }}
+                  >
+                    Tu peux encore changer ton choix tant que cette fenêtre est
+                    ouverte.
+                  </p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                      gap: "14px",
+                      marginTop: "20px",
+                    }}
+                  >
+                    <button
+                      onClick={() => handleFeedback("works")}
+                      style={{
+                        border: "none",
+                        borderRadius: "20px",
+                        padding: "17px 18px",
+                        fontWeight: "1000",
+                        fontSize: "16px",
+                        cursor: "pointer",
+                        color: "white",
+                        background:
+                          "linear-gradient(135deg, rgba(0, 200, 83, 0.98), rgba(0, 120, 55, 0.98))",
+                        boxShadow: "0 0 24px rgba(0, 255, 120, 0.45)",
+                      }}
+                    >
+                      🟢 Fonctionne
+                    </button>
+
+                    <button
+                      onClick={() => handleFeedback("not_working")}
+                      style={{
+                        border: "none",
+                        borderRadius: "20px",
+                        padding: "17px 18px",
+                        fontWeight: "1000",
+                        fontSize: "16px",
+                        cursor: "pointer",
+                        color: "white",
+                        background:
+                          "linear-gradient(135deg, rgba(255, 77, 77, 1), rgba(130, 0, 18, 1))",
+                        boxShadow: "0 0 28px rgba(255, 0, 76, 0.72)",
+                      }}
+                    >
+                      🔴 Ne fonctionne pas
+                    </button>
+                  </div>
+
+                  <button
+                    className="secondary-button"
+                    onClick={() => handleCloseResult(true)}
+                    style={{
+                      marginTop: "18px",
+                      borderColor: "rgba(255, 120, 140, 0.75)",
+                      color: "white",
+                      background: "rgba(255, 255, 255, 0.08)",
+                    }}
+                  >
+                    Fermer quand même
                   </button>
                 </div>
-
-                <button
-                  className="secondary-button"
-                  onClick={() => handleCloseResult(true)}
-                  style={{
-                    marginTop: "16px",
-                    borderColor: "rgba(255, 120, 140, 0.75)",
-                    color: "white",
-                    background: "rgba(255, 255, 255, 0.08)",
-                  }}
-                >
-                  Fermer quand même
-                </button>
               </div>
             )}
 
