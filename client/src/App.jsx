@@ -27,6 +27,8 @@ function App() {
 
   const [stats, setStats] = useState(null);
   const [generatedResource, setGeneratedResource] = useState("");
+  const [generatedHistoryId, setGeneratedHistoryId] = useState(null);
+  const [feedbackStatus, setFeedbackStatus] = useState("");
   const [resultOpen, setResultOpen] = useState(false);
 
   const [cooldownUntil, setCooldownUntil] = useState(null);
@@ -39,6 +41,7 @@ function App() {
 
   const [serviceSettings, setServiceSettings] = useState({});
   const [vipLockStatus, setVipLockStatus] = useState("");
+  const [stockDeleteStatus, setStockDeleteStatus] = useState("");
   const [lastDailyInfo, setLastDailyInfo] = useState(null);
   const [usageInfo, setUsageInfo] = useState(null);
   const [resetCountdown, setResetCountdown] = useState("");
@@ -222,6 +225,8 @@ function App() {
     setUser(null);
     setUsageInfo(null);
     setLastDailyInfo(null);
+    setGeneratedHistoryId(null);
+    setFeedbackStatus("");
   };
 
   const handleAdminAccess = () => {
@@ -323,6 +328,54 @@ function App() {
     }
   };
 
+  const handleClearServiceStock = async (serviceName, stock) => {
+    if (!user?.isAdmin) {
+      setStockDeleteStatus("Accès refusé : rôle admin requis.");
+      return;
+    }
+
+    if (stock <= 0) {
+      setStockDeleteStatus(`Aucun stock disponible pour ${serviceName}.`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Supprimer tout le stock disponible de ${serviceName} ?\n\nCette action supprimera ${stock} ressource(s) non utilisée(s). L'historique restera conservé.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setStockDeleteStatus(`Suppression du stock ${serviceName} en cours...`);
+
+      const response = await fetch(
+        `${API_URL}/api/resources/${encodeURIComponent(serviceName)}/stock`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setStockDeleteStatus(data.error || "Erreur pendant la suppression du stock.");
+        return;
+      }
+
+      setStockDeleteStatus(
+        `${data.deleted ?? 0} ressource(s) supprimée(s) pour ${serviceName}.`
+      );
+
+      loadStats();
+      loadHistory();
+      loadUsageInfo();
+    } catch (error) {
+      console.error(error);
+      setStockDeleteStatus("Impossible de contacter le serveur.");
+    }
+  };
+
   const handleGenerate = async (serviceName) => {
     if (!loggedIn) {
       handleDiscordLogin();
@@ -390,6 +443,8 @@ function App() {
       }
 
       setGeneratedResource(`${data.service} : ${data.resource}`);
+      setGeneratedHistoryId(data.historyId || null);
+      setFeedbackStatus("");
       setResultOpen(true);
 
       setLastDailyInfo({
@@ -417,6 +472,58 @@ function App() {
       alert("Code copié !");
     } catch {
       alert("Impossible de copier automatiquement.");
+    }
+  };
+
+  const handleFeedback = async (status) => {
+    if (!generatedHistoryId) {
+      alert("Impossible d’enregistrer l’avis pour cette génération.");
+      return;
+    }
+
+    try {
+      setFeedbackStatus("Enregistrement de ton avis...");
+
+      const response = await fetch(`${API_URL}/api/history/${generatedHistoryId}/feedback`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setFeedbackStatus("");
+        alert(data.error || "Impossible d’enregistrer l’avis.");
+        return;
+      }
+
+      setFeedbackStatus(
+        status === "works"
+          ? "Merci ! Avis enregistré : fonctionne."
+          : "Merci ! Avis enregistré : ne fonctionne pas."
+      );
+
+      setHistory((previous) =>
+        previous.map((item) =>
+          item.id === generatedHistoryId
+            ? {
+                ...item,
+                feedback_status: status,
+                feedback_at: data.feedbackAt || new Date().toISOString(),
+              }
+            : item
+        )
+      );
+
+      loadHistory();
+    } catch (error) {
+      console.error(error);
+      setFeedbackStatus("");
+      alert("Impossible de contacter le serveur.");
     }
   };
 
@@ -490,13 +597,52 @@ function App() {
     });
   }, [history, historySearch, historyServiceFilter]);
 
+  const getFeedbackLabel = (status) => {
+    if (status === "works") return "Fonctionne";
+    if (status === "not_working") return "Ne fonctionne pas";
+    return "Pas encore voté";
+  };
+
+  const renderFeedbackBadge = (status) => {
+    const isWorking = status === "works";
+    const isNotWorking = status === "not_working";
+
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          width: "fit-content",
+          padding: "6px 10px",
+          borderRadius: "999px",
+          fontWeight: "900",
+          fontSize: "12px",
+          background: isWorking
+            ? "rgba(0, 255, 120, 0.14)"
+            : isNotWorking
+            ? "rgba(255, 70, 70, 0.14)"
+            : "rgba(255, 255, 255, 0.08)",
+          color: isWorking ? "#66ff99" : isNotWorking ? "#ff6b6b" : "rgba(255, 255, 255, 0.75)",
+          border: isWorking
+            ? "1px solid rgba(0, 255, 120, 0.28)"
+            : isNotWorking
+            ? "1px solid rgba(255, 70, 70, 0.28)"
+            : "1px solid rgba(255, 255, 255, 0.12)",
+        }}
+      >
+        {isWorking ? "✅ Fonctionne" : isNotWorking ? "❌ Ne fonctionne pas" : "⏳ En attente"}
+      </span>
+    );
+  };
+
   const exportHistoryCsv = () => {
     const rows = [
-      ["Membre", "Service", "Ressource", "Date"],
+      ["Membre", "Service", "Ressource", "Avis", "Date"],
       ...filteredHistory.map((item) => [
         item.username || item.user_id || "Utilisateur",
         item.service || "",
         item.resource_value || "Ancienne génération non stockée",
+        getFeedbackLabel(item.feedback_status),
         formatDate(item.created_at),
       ]),
     ];
@@ -658,6 +804,7 @@ function App() {
                 <th>Membre</th>
                 <th>Service</th>
                 <th>Ressource générée</th>
+                <th>Avis</th>
                 <th>Date</th>
               </tr>
             </thead>
@@ -672,6 +819,7 @@ function App() {
                       {item.resource_value || "Ancienne génération non stockée"}
                     </code>
                   </td>
+                  <td>{renderFeedbackBadge(item.feedback_status)}</td>
                   <td>{formatDate(item.created_at)}</td>
                 </tr>
               ))}
@@ -763,7 +911,10 @@ function App() {
   const renderStockPanel = () => (
     <div className="admin-import-box">
       <h3>Stocks</h3>
-      <p>Surveille les services en rupture ou presque vides.</p>
+      <p>
+        Surveille les services en rupture ou presque vides. Tu peux aussi vider
+        tout le stock disponible d’un seul service.
+      </p>
 
       <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
         {services.map((service) => {
@@ -781,18 +932,52 @@ function App() {
                 padding: "14px",
                 borderRadius: "16px",
                 background: "rgba(255, 255, 255, 0.05)",
+                flexWrap: "wrap",
               }}
             >
               <span>
                 {service.icon} {service.name}
               </span>
-              <strong style={{ color: badge.color }}>
-                {stock} restante(s) • {badge.label}
-              </strong>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <strong style={{ color: badge.color }}>
+                  {stock} restante(s) • {badge.label}
+                </strong>
+
+                <button
+                  onClick={() => handleClearServiceStock(service.name, stock)}
+                  disabled={stock <= 0}
+                  style={{
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "10px 14px",
+                    fontWeight: "900",
+                    cursor: stock <= 0 ? "not-allowed" : "pointer",
+                    background:
+                      stock <= 0
+                        ? "rgba(255, 255, 255, 0.12)"
+                        : "linear-gradient(135deg, #ff4d4d, #8b0000)",
+                    color: "white",
+                    opacity: stock <= 0 ? 0.55 : 1,
+                  }}
+                >
+                  Vider le stock
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
+
+      {stockDeleteStatus && <p className="import-status">{stockDeleteStatus}</p>}
 
       {stats?.lowStock?.length > 0 && (
         <p className="admin-error">
@@ -1184,7 +1369,7 @@ function App() {
                           color: "#1a1200",
                           boxShadow: "0 0 18px rgba(255, 196, 0, 0.35)",
                           cursor:
-                            lockedForUser || maintenance || outOfStock
+                            lockedForUser || maintenance
                               ? "not-allowed"
                               : "pointer",
                         }
@@ -1430,6 +1615,51 @@ function App() {
             <h2>Voici ton code</h2>
 
             <div className="result-code">{generatedResource}</div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: "12px",
+                marginTop: "18px",
+              }}
+            >
+              <button
+                onClick={() => handleFeedback("works")}
+                style={{
+                  border: "none",
+                  borderRadius: "16px",
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, #00c853, #007a33)",
+                  color: "white",
+                  fontWeight: "900",
+                  cursor: generatedHistoryId ? "pointer" : "not-allowed",
+                  boxShadow: "0 0 18px rgba(0, 200, 83, 0.28)",
+                }}
+                disabled={!generatedHistoryId}
+              >
+                ✅ Fonctionne
+              </button>
+
+              <button
+                onClick={() => handleFeedback("not_working")}
+                style={{
+                  border: "none",
+                  borderRadius: "16px",
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, #ff4d4d, #9b0000)",
+                  color: "white",
+                  fontWeight: "900",
+                  cursor: generatedHistoryId ? "pointer" : "not-allowed",
+                  boxShadow: "0 0 18px rgba(255, 77, 77, 0.28)",
+                }}
+                disabled={!generatedHistoryId}
+              >
+                ❌ Ne fonctionne pas
+              </button>
+            </div>
+
+            {feedbackStatus && <p className="import-status">{feedbackStatus}</p>}
 
             {lastDailyInfo && (
               <p className="import-status">

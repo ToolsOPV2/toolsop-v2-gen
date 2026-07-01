@@ -625,6 +625,43 @@ app.post("/api/resources/import", requireAdmin, async (req, res) => {
   }
 });
 
+app.delete("/api/resources/:service/stock", requireAdmin, async (req, res) => {
+  try {
+    const service = decodeURIComponent(req.params.service);
+
+    if (!allowedServices.includes(service)) {
+      return res.status(400).json({
+        error: "Service invalide.",
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("resources")
+      .delete()
+      .eq("service", service)
+      .eq("used", false)
+      .select("id");
+
+    if (error) {
+      console.error("Erreur suppression stock :", error);
+      return res.status(500).json({
+        error: "Erreur pendant la suppression du stock.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      service,
+      deleted: data?.length || 0,
+    });
+  } catch (error) {
+    console.error("Erreur serveur suppression stock :", error);
+    return res.status(500).json({
+      error: "Erreur serveur suppression stock.",
+    });
+  }
+});
+
 app.post("/api/generate", requireLogin, async (req, res) => {
   try {
     if (!checkGenerateRateLimit(req)) {
