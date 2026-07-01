@@ -615,9 +615,21 @@ app.post("/api/resources/import", requireAdmin, async (req, res) => {
       });
     }
 
+    const { data: availableResources, error: countError } = await supabase
+      .from("resources")
+      .select("id")
+      .eq("service", service)
+      .eq("used", false);
+
+    if (countError) {
+      console.error("Erreur comptage stock après import :", countError);
+    }
+
     res.json({
       success: true,
+      service,
       added: newResources.length,
+      stockCount: countError ? newResources.length : availableResources.length,
     });
   } catch (error) {
     console.error(error);

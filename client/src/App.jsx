@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+    import { useEffect, useMemo, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const SUPPORT_URL = import.meta.env.VITE_DISCORD_SUPPORT_URL || "";
@@ -289,23 +289,25 @@ function App() {
         return;
       }
 
+      const fallbackStock =
+        getStock(selectedService) + Number(data.added || 0);
+
+      const nextStock =
+        typeof data.stockCount === "number" ? data.stockCount : fallbackStock;
+
       setImportStatus(
-        `${data.added} ressource(s) importée(s) pour ${selectedService}. Stock actuel : ${
-          data.stockCount ?? "mise à jour en cours"
-        }.`
+        `${data.added} ressource(s) importée(s) pour ${selectedService}. Stock actuel : ${nextStock}.`
       );
 
       setBulkText("");
 
-      if (typeof data.stockCount === "number") {
-        setStats((previousStats) => ({
-          ...(previousStats || {}),
-          byService: {
-            ...((previousStats && previousStats.byService) || {}),
-            [selectedService]: data.stockCount,
-          },
-        }));
-      }
+      setStats((previousStats) => ({
+        ...(previousStats || {}),
+        byService: {
+          ...((previousStats && previousStats.byService) || {}),
+          [selectedService]: nextStock,
+        },
+      }));
 
       await loadStats();
       loadHistory();
@@ -1784,3 +1786,4 @@ function App() {
 }
 
 export default App;
+    
