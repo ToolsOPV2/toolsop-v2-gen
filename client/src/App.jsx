@@ -1791,13 +1791,118 @@ function App() {
             {feedbackStatus && <p className="import-status">{feedbackStatus}</p>}
 
             {showCloseAnyway && !feedbackChoice && (
-              <button
-                className="secondary-button"
-                onClick={() => handleCloseResult(true)}
-                style={{ marginTop: "12px" }}
+              <div
+                role="alert"
+                style={{
+                  marginTop: "18px",
+                  padding: "24px",
+                  borderRadius: "26px",
+                  background:
+                    "linear-gradient(135deg, rgba(120, 0, 20, 0.62), rgba(255, 0, 64, 0.22))",
+                  border: "1px solid rgba(255, 70, 90, 0.95)",
+                  boxShadow:
+                    "0 0 30px rgba(255, 0, 76, 0.55), inset 0 0 24px rgba(255, 50, 80, 0.14)",
+                  backdropFilter: "blur(16px)",
+                  WebkitBackdropFilter: "blur(16px)",
+                  textAlign: "center",
+                }}
               >
-                Fermer quand même
-              </button>
+                <div
+                  style={{
+                    fontSize: "46px",
+                    lineHeight: "1",
+                    marginBottom: "10px",
+                    filter: "drop-shadow(0 0 14px rgba(255, 0, 76, 0.9))",
+                  }}
+                >
+                  ⚠️
+                </div>
+
+                <h2
+                  style={{
+                    margin: "0 0 10px",
+                    color: "white",
+                    fontSize: "clamp(24px, 5vw, 38px)",
+                    fontWeight: "1000",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    textShadow:
+                      "0 0 12px rgba(255, 0, 76, 0.95), 0 0 28px rgba(255, 0, 76, 0.55)",
+                  }}
+                >
+                  Note avant de fermer
+                </h2>
+
+                <p
+                  style={{
+                    margin: "0 auto 18px",
+                    maxWidth: "620px",
+                    color: "rgba(255, 255, 255, 0.92)",
+                    fontSize: "17px",
+                    fontWeight: "800",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  Dis-nous si la ressource fonctionne ou non. Tu peux encore
+                  changer ton choix tant que cette fenêtre est ouverte.
+                </p>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                    gap: "12px",
+                    marginTop: "18px",
+                  }}
+                >
+                  <button
+                    onClick={() => handleFeedback("works")}
+                    style={{
+                      border: "none",
+                      borderRadius: "18px",
+                      padding: "14px 16px",
+                      fontWeight: "1000",
+                      cursor: "pointer",
+                      color: "white",
+                      background:
+                        "linear-gradient(135deg, rgba(0, 200, 83, 0.95), rgba(0, 120, 55, 0.95))",
+                      boxShadow: "0 0 18px rgba(0, 255, 120, 0.38)",
+                    }}
+                  >
+                    🟢 Fonctionne
+                  </button>
+
+                  <button
+                    onClick={() => handleFeedback("not_working")}
+                    style={{
+                      border: "none",
+                      borderRadius: "18px",
+                      padding: "14px 16px",
+                      fontWeight: "1000",
+                      cursor: "pointer",
+                      color: "white",
+                      background:
+                        "linear-gradient(135deg, rgba(255, 77, 77, 0.98), rgba(130, 0, 18, 0.98))",
+                      boxShadow: "0 0 20px rgba(255, 0, 76, 0.58)",
+                    }}
+                  >
+                    🔴 Ne fonctionne pas
+                  </button>
+                </div>
+
+                <button
+                  className="secondary-button"
+                  onClick={() => handleCloseResult(true)}
+                  style={{
+                    marginTop: "16px",
+                    borderColor: "rgba(255, 120, 140, 0.75)",
+                    color: "white",
+                    background: "rgba(255, 255, 255, 0.08)",
+                  }}
+                >
+                  Fermer quand même
+                </button>
+              </div>
             )}
 
             {lastDailyInfo && (
