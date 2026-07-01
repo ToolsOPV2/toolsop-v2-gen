@@ -391,10 +391,24 @@ function App() {
       }
 
       setStockDeleteStatus(
-        `${data.deleted ?? 0} ressource(s) supprimée(s) pour ${serviceName}.`
+        `${data.deleted ?? 0} ressource(s) supprimée(s) pour ${serviceName}. Stock actuel : ${
+          data.stockCount ?? 0
+        }.`
       );
 
-      loadStats();
+      setStats((previousStats) => ({
+        ...(previousStats || {}),
+        totalAvailable: Math.max(
+          0,
+          Number(previousStats?.totalAvailable || 0) - Number(data.deleted || 0)
+        ),
+        byService: {
+          ...((previousStats && previousStats.byService) || {}),
+          [serviceName]: Number(data.stockCount || 0),
+        },
+      }));
+
+      await loadStats();
       loadHistory();
       loadUsageInfo();
     } catch (error) {
@@ -472,6 +486,20 @@ function App() {
       setGeneratedHistoryId(data.historyId || null);
       setFeedbackStatus("");
       setResultOpen(true);
+
+      if (typeof data.stockCount === "number") {
+        setStats((previousStats) => ({
+          ...(previousStats || {}),
+          totalAvailable: Math.max(
+            0,
+            Number(previousStats?.totalAvailable || 0) - 1
+          ),
+          byService: {
+            ...((previousStats && previousStats.byService) || {}),
+            [data.service]: data.stockCount,
+          },
+        }));
+      }
 
       setLastDailyInfo({
         dailyLimit: data.dailyLimit,

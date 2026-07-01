@@ -65,6 +65,73 @@ const allowedServices = [
   "Nitro Uncheck",
 ];
 
+async function getAvailableStockCount(service) {
+  const { count, error } = await supabase
+    .from("resources")
+    .select("id", { count: "exact", head: true })
+    .eq("service", service)
+    .eq("used", false);
+
+  if (error) {
+    throw error;
+  }
+
+  return count || 0;
+}
+
+async function getAvailableStockCountsByService() {
+  const entries = await Promise.all(
+    allowedServices.map(async (service) => {
+      const count = await getAvailableStockCount(service);
+      return [service, count];
+    })
+  );
+
+  return Object.fromEntries(entries);
+}
+
+async function deleteAvailableStockForService(service) {
+  let deleted = 0;
+
+  while (true) {
+    const { data: rows, error: selectError } = await supabase
+      .from("resources")
+      .select("id")
+      .eq("service", service)
+      .eq("used", false)
+      .limit(1000);
+
+    if (selectError) {
+      throw selectError;
+    }
+
+    const ids = (rows || []).map((row) => row.id);
+
+    if (ids.length === 0) {
+      break;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("resources")
+      .delete()
+      .in("id", ids);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    deleted += ids.length;
+
+    if (ids.length < 1000) {
+      break;
+    }
+  }
+
+  return deleted;
+}
+
+
+
 const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
 const VIP_COOLDOWN_MS = 1 * 60 * 1000;
 const BOOST_COOLDOWN_MS = 2 * 60 * 1000;
@@ -387,21 +454,25 @@ app.post("/api/logout", (req, res) => {
 
 app.get("/api/stats", async (req, res) => {
   try {
-    const { data: availableResources, error: resourcesError } = await supabase
-      .from("resources")
-      .select("service")
-      .eq("used", false);
+    const byService = await getAvailableStockCountsByService();
 
-    if (resourcesError) {
-      console.error(resourcesError);
-      return res.status(500).json({ error: "Erreur lecture ressources." });
-    }
+    const totalAvailable = allowedServices.reduce(
+      (total, service) => total + (byService[service] || 0),
+      0
+    );
+
+    const lowStock = allowedServices
+      .filter((service) => (byService[service] || 0) <= 5)
+      .map((service) => ({
+        service,
+        count: byService[service] || 0,
+      }));
 
     const todayStart = getTodayStart();
 
-    const { data: todayHistory, error: historyError } = await supabase
+    const { count: totalGeneratedToday, error: historyError } = await supabase
       .from("history")
-      .select("id")
+      .select("id", { count: "exact", head: true })
       .gte("created_at", todayStart.toISOString());
 
     if (historyError) {
@@ -412,27 +483,17 @@ app.get("/api/stats", async (req, res) => {
     const { data: allHistory, error: popularError } = await supabase
       .from("history")
       .select("service")
+      .order("created_at", { ascending: false })
       .limit(1000);
 
     if (popularError) {
       console.error("Erreur lecture services populaires :", popularError);
     }
 
-    const byService = {};
     const generatedByService = {};
-    const lowStock = [];
 
     for (const service of allowedServices) {
-      const count = availableResources.filter(
-        (item) => item.service === service
-      ).length;
-
-      byService[service] = count;
       generatedByService[service] = 0;
-
-      if (count <= 5) {
-        lowStock.push({ service, count });
-      }
     }
 
     for (const item of allHistory || []) {
@@ -452,15 +513,15 @@ app.get("/api/stats", async (req, res) => {
       .slice(0, 3);
 
     res.json({
-      totalAvailable: availableResources.length,
-      totalGeneratedToday: todayHistory.length,
+      totalAvailable,
+      totalGeneratedToday: totalGeneratedToday || 0,
       totalServices: allowedServices.length,
       byService,
       lowStock,
       popularServices,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Erreur serveur stats :", error);
     res.status(500).json({ error: "Erreur serveur stats." });
   }
 });
@@ -615,13 +676,11 @@ app.post("/api/resources/import", requireAdmin, async (req, res) => {
       });
     }
 
-    const { data: availableResources, error: countError } = await supabase
-      .from("resources")
-      .select("id")
-      .eq("service", service)
-      .eq("used", false);
+    let stockCount = newResources.length;
 
-    if (countError) {
+    try {
+      stockCount = await getAvailableStockCount(service);
+    } catch (countError) {
       console.error("Erreur comptage stock après import :", countError);
     }
 
@@ -629,7 +688,7 @@ app.post("/api/resources/import", requireAdmin, async (req, res) => {
       success: true,
       service,
       added: newResources.length,
-      stockCount: countError ? newResources.length : availableResources.length,
+      stockCount,
     });
   } catch (error) {
     console.error(error);
@@ -647,24 +706,17 @@ app.delete("/api/resources/:service/stock", requireAdmin, async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase
-      .from("resources")
-      .delete()
-      .eq("service", service)
-      .eq("used", false)
-      .select("id");
-
-    if (error) {
-      console.error("Erreur suppression stock :", error);
-      return res.status(500).json({
-        error: "Erreur pendant la suppression du stock.",
-      });
-    }
+    const before = await getAvailableStockCount(service);
+    const deleted = await deleteAvailableStockForService(service);
+    const after = await getAvailableStockCount(service);
 
     return res.json({
       success: true,
       service,
-      deleted: data?.length || 0,
+      before,
+      deleted,
+      after,
+      stockCount: after,
     });
   } catch (error) {
     console.error("Erreur serveur suppression stock :", error);
@@ -786,6 +838,8 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       }
     }
 
+    const stockBeforeGeneration = await getAvailableStockCount(service);
+
     const { data: resource, error: selectError } = await supabase
       .from("resources")
       .select("*")
@@ -804,7 +858,8 @@ app.post("/api/generate", requireLogin, async (req, res) => {
 
     if (!resource) {
       return res.status(404).json({
-        error: "Aucune ressource disponible.",
+        error: `Aucune ressource disponible pour ${service}. Stock serveur : ${stockBeforeGeneration}.`,
+        stockCount: stockBeforeGeneration,
       });
     }
 
@@ -863,6 +918,7 @@ app.post("/api/generate", requireLogin, async (req, res) => {
       service,
       resource: resource.value,
       historyId: historyEntry?.id || null,
+      stockCount: Math.max(0, stockBeforeGeneration - 1),
       cooldownMs,
       plan,
       dailyLimit,
