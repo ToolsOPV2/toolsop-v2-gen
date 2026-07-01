@@ -31,6 +31,8 @@ function App() {
   const [generatedResource, setGeneratedResource] = useState("");
   const [generatedHistoryId, setGeneratedHistoryId] = useState(null);
   const [feedbackStatus, setFeedbackStatus] = useState("");
+  const [feedbackChoice, setFeedbackChoice] = useState("");
+  const [showCloseAnyway, setShowCloseAnyway] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
 
   const [cooldownUntil, setCooldownUntil] = useState(null);
@@ -189,6 +191,25 @@ function App() {
     return () => clearInterval(interval);
   }, [usageInfo?.resetAt]);
 
+  useEffect(() => {
+    const shouldWarnBeforeLeaving =
+      resultOpen && generatedHistoryId && !feedbackChoice;
+
+    if (!shouldWarnBeforeLeaving) return;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+      return "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [resultOpen, generatedHistoryId, feedbackChoice]);
+
   const formatCooldown = (ms) => {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -241,6 +262,8 @@ function App() {
     setLastDailyInfo(null);
     setGeneratedHistoryId(null);
     setFeedbackStatus("");
+    setFeedbackChoice("");
+    setShowCloseAnyway(false);
   };
 
   const handleAdminAccess = () => {
@@ -487,6 +510,8 @@ function App() {
       setGeneratedResource(`${data.service} : ${data.resource}`);
       setGeneratedHistoryId(data.historyId || null);
       setFeedbackStatus("");
+      setFeedbackChoice("");
+      setShowCloseAnyway(false);
       setResultOpen(true);
 
       if (typeof data.stockCount === "number") {
@@ -557,10 +582,13 @@ function App() {
         return;
       }
 
+      setFeedbackChoice(status);
+      setShowCloseAnyway(false);
+
       setFeedbackStatus(
         status === "works"
-          ? "Merci ! Avis enregistré : fonctionne."
-          : "Merci ! Avis enregistré : ne fonctionne pas."
+          ? "Merci ! Avis enregistré : fonctionne. Tu peux changer ton choix tant que cette fenêtre est ouverte."
+          : "Merci ! Avis enregistré : ne fonctionne pas. Tu peux changer ton choix tant que cette fenêtre est ouverte."
       );
 
       setHistory((previous) =>
@@ -581,6 +609,19 @@ function App() {
       setFeedbackStatus("");
       alert("Impossible de contacter le serveur.");
     }
+  };
+
+  const handleCloseResult = (forceClose = false) => {
+    if (!forceClose && generatedHistoryId && !feedbackChoice) {
+      setShowCloseAnyway(true);
+      setFeedbackStatus(
+        "Avant de fermer, choisis si la ressource fonctionne ou non. Tu peux aussi fermer quand même."
+      );
+      return;
+    }
+
+    setResultOpen(false);
+    setShowCloseAnyway(false);
   };
 
   const getStock = (serviceName) => {
@@ -1649,7 +1690,7 @@ function App() {
           <div className="result-page glass">
             <button
               className="result-close"
-              onClick={() => setResultOpen(false)}
+              onClick={() => handleCloseResult()}
             >
               ×
             </button>
@@ -1672,6 +1713,24 @@ function App() {
 
             <div className="result-code">{generatedResource}</div>
 
+            {generatedHistoryId && (
+              <p
+                style={{
+                  marginTop: "14px",
+                  color: feedbackChoice
+                    ? "rgba(102, 255, 153, 0.95)"
+                    : "rgba(255, 204, 0, 0.95)",
+                  fontSize: "14px",
+                  fontWeight: "800",
+                  lineHeight: "1.5",
+                }}
+              >
+                {feedbackChoice
+                  ? "Avis enregistré. Tu peux encore changer ton choix avant de fermer."
+                  : "Avant de fermer, indique si la ressource fonctionne ou non."}
+              </p>
+            )}
+
             <div
               style={{
                 display: "grid",
@@ -1690,7 +1749,14 @@ function App() {
                   color: "white",
                   fontWeight: "900",
                   cursor: generatedHistoryId ? "pointer" : "not-allowed",
-                  boxShadow: "0 0 18px rgba(0, 200, 83, 0.28)",
+                  boxShadow:
+                    feedbackChoice === "works"
+                      ? "0 0 26px rgba(0, 200, 83, 0.55)"
+                      : "0 0 18px rgba(0, 200, 83, 0.28)",
+                  outline:
+                    feedbackChoice === "works"
+                      ? "2px solid rgba(255, 255, 255, 0.75)"
+                      : "none",
                 }}
                 disabled={!generatedHistoryId}
               >
@@ -1707,7 +1773,14 @@ function App() {
                   color: "white",
                   fontWeight: "900",
                   cursor: generatedHistoryId ? "pointer" : "not-allowed",
-                  boxShadow: "0 0 18px rgba(255, 77, 77, 0.28)",
+                  boxShadow:
+                    feedbackChoice === "not_working"
+                      ? "0 0 26px rgba(255, 77, 77, 0.55)"
+                      : "0 0 18px rgba(255, 77, 77, 0.28)",
+                  outline:
+                    feedbackChoice === "not_working"
+                      ? "2px solid rgba(255, 255, 255, 0.75)"
+                      : "none",
                 }}
                 disabled={!generatedHistoryId}
               >
@@ -1716,6 +1789,16 @@ function App() {
             </div>
 
             {feedbackStatus && <p className="import-status">{feedbackStatus}</p>}
+
+            {showCloseAnyway && !feedbackChoice && (
+              <button
+                className="secondary-button"
+                onClick={() => handleCloseResult(true)}
+                style={{ marginTop: "12px" }}
+              >
+                Fermer quand même
+              </button>
+            )}
 
             {lastDailyInfo && (
               <p className="import-status">
@@ -1732,7 +1815,7 @@ function App() {
 
               <button
                 className="secondary-button"
-                onClick={() => setResultOpen(false)}
+                onClick={() => handleCloseResult()}
               >
                 Retour au site
               </button>
